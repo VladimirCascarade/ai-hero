@@ -19,7 +19,7 @@ export const upsertChat = async (opts: {
   if (existingChat) {
     // If chat exists but belongs to a different user, throw error
     if (existingChat.userId !== userId) {
-      throw new Error("Chat ID already exists under a different user");
+      throw new Error("Chat ID not found.");
     }
     // Delete all existing messages
     await db.delete(messages).where(eq(messages.chatId, chatId));
@@ -64,10 +64,19 @@ export const getChat = async (opts: { userId: string; chatId: string }) => {
 
   return {
     ...chat,
-    messages: chat.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.parts,
+    messages: chat.messages.map((msg) => ({
+      id: msg.id,
+      // msg.role is typed as string, so we
+      // need to cast it to the correct type
+      role: msg.role as "user" | "assistant",
+      // msg.parts is typed as unknown[], so we
+      // need to cast it to the correct type
+      parts: msg.parts as Message["parts"],
+      // content is not persisted, so we can
+      // safely pass an empty string, because
+      // parts are always present, and the AI SDK
+      // will use the parts to construct the content
+      content: "",
     })),
   };
 };

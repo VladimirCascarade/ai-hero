@@ -4,6 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
 import { isNewChatCreated } from "~/utils";
@@ -12,8 +13,9 @@ import type { Message } from "ai";
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
-  chatId: string | undefined;
+  chatId: string;
   initialMessages: Message[];
+  isNewChat: boolean;
 }
 
 export const ChatPage = ({
@@ -21,6 +23,7 @@ export const ChatPage = ({
   isAuthenticated,
   chatId,
   initialMessages,
+  isNewChat,
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
@@ -34,12 +37,14 @@ export const ChatPage = ({
   } = useChat({
     body: {
       chatId,
+      isNewChat,
     },
     initialMessages,
   });
 
   useEffect(() => {
     const lastDataItem = data?.[data.length - 1];
+    console.log(lastDataItem);
     if (lastDataItem && isNewChatCreated(lastDataItem)) {
       router.push(`?id=${lastDataItem.chatId}`);
     }
@@ -59,23 +64,24 @@ export const ChatPage = ({
   return (
     <>
       <div className="flex flex-1 flex-col">
-        <div
-          className="mx-auto w-full max-w-[65ch] flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500"
-          role="log"
-          aria-label="Chat messages"
+        <StickToBottom
+          className="mx-auto w-full max-w-[65ch] flex-1 overflow-auto [&>div]:scrollbar-thin [&>div]:scrollbar-track-gray-200 [&>div]:scrollbar-thumb-gray-600"
+          resize="instant"
+          initial="instant"
         >
-          {messages.map((message, index) => {
-            return (
-              <ChatMessage
-                key={index}
-                parts={message.parts ?? []}
-                role={message.role}
-                userName={userName}
-              />
-            );
-          })}
-        </div>
-
+          <StickToBottom.Content>
+            {messages.map((message, index) => {
+              return (
+                <ChatMessage
+                  key={index}
+                  parts={message.parts ?? []}
+                  role={message.role}
+                  userName={userName}
+                />
+              );
+            })}
+          </StickToBottom.Content>
+        </StickToBottom>
         <div className="border-t border-gray-700">
           <form onSubmit={handleSubmit} className="mx-auto max-w-[65ch] p-4">
             <div className="flex gap-2">

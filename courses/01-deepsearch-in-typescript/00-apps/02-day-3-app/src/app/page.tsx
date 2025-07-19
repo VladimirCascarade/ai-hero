@@ -14,7 +14,11 @@ export default async function HomePage({
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
-  const { id: chatId } = await searchParams;
+  const { id: chatIdFromUrl } = (await searchParams) as { id?: string };
+
+  // Generate a stable chatId if none exists
+  const chatId = chatIdFromUrl ?? crypto.randomUUID();
+  const isNewChat = !chatIdFromUrl;
 
   // Fetch chats if user is authenticated
   const chats =
@@ -33,7 +37,7 @@ export default async function HomePage({
     activeChat?.messages.map((msg) => ({
       id: msg.id,
       role: msg.role as "user" | "assistant",
-      parts: msg.content as Message["parts"],
+      parts: msg.parts,
       content: "",
     })) ?? [];
 
@@ -88,9 +92,11 @@ export default async function HomePage({
       </div>
 
       <ChatPage
+        key={chatId}
         userName={userName}
         isAuthenticated={isAuthenticated}
         chatId={chatId}
+        isNewChat={isNewChat}
         initialMessages={initialMessages}
       />
     </div>
