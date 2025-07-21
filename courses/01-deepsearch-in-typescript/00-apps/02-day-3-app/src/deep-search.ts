@@ -2,6 +2,8 @@ import { streamText, type Message, type TelemetrySettings } from "ai";
 import { model } from "./model";
 import { z } from "zod";
 import { searchSerper } from "./serper";
+import { env } from "./env";
+import type { Tool, ToolExecutionOptions } from "ai";
 import { bulkCrawlWebsites } from "./server/scraper";
 import { cacheWithRedis } from "./server/redis/redis";
 
@@ -19,7 +21,7 @@ export const systemPrompt = `You are a helpful AI assistant with access to real-
 10. Always use the current date to provide context for how recent the information is, especially when discussing time-sensitive or up-to-date topics. If you reference news, events, or data, clarify how recent your sources are relative to the current date.
 
 When using the scrapePages tool, follow these steps:
-- Scrape 4 to 6 URLs per query.
+- Scrape ${env.SCRAPE_URLS_COUNT} URLs per query.
 - Select a diverse set of sources:
   - Use different domains.
   - Include various perspectives.
@@ -27,13 +29,18 @@ When using the scrapePages tool, follow these steps:
 - Provide a well-rounded answer by synthesizing information from these diverse sources.
 `;
 
-export const tools = {
+export const tools: Record<string, Tool> = {
   searchWeb: {
     parameters: z.object({
       query: z.string().describe("The query to search the web for"),
     }),
-    execute: async ({ query }, { abortSignal }) => {
-      const results = await searchSerper({ q: query, num: 10 }, abortSignal);
+    execute: async (args: { query: string }, options: ToolExecutionOptions) => {
+      const { query } = args;
+      const { abortSignal } = options;
+      const results = await searchSerper(
+        { q: query, num: env.SEARCH_RESULTS_COUNT },
+        abortSignal,
+      );
       return results.organic.map((result) => ({
         title: result.title,
         link: result.link,

@@ -21,7 +21,7 @@ const langfuse = new Langfuse({
 const rateLimitConfig: RateLimitConfig = {
   maxRequests: 5,
   maxRetries: 3,
-  windowMs: 60_000, // 60 seconds
+  windowMs: 170_000, // 60 seconds
   keyPrefix: "chat",
 };
 
