@@ -4,7 +4,8 @@ import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
 import { getChats, getChat } from "~/server/db/queries";
-import type { UIMessage } from "ai";
+import type { OurMessage } from "~/types";
+import { ChatSidebarLink } from "../components/chat-sidebar-link.tsx";
 
 export default async function HomePage({
   searchParams,
@@ -33,11 +34,11 @@ export default async function HomePage({
       : null;
 
   // Map the messages to the correct format for useChat
-  const initialMessages: UIMessage[] =
+  const initialMessages: OurMessage[] =
     activeChat?.messages.map((msg) => ({
       id: msg.id,
-      role: msg.role,
-      parts: msg.parts,
+      role: msg.role as "user" | "assistant",
+      parts: msg.parts as OurMessage["parts"],
     })) ?? [];
 
   return (
@@ -62,16 +63,11 @@ export default async function HomePage({
           {chats.length > 0 ? (
             chats.map((chat) => (
               <div key={chat.id} className="flex items-center gap-2">
-                <Link
-                  href={`/?id=${chat.id}`}
-                  className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === chatId
-                      ? "bg-gray-700"
-                      : "hover:bg-gray-750 bg-gray-800"
-                  }`}
-                >
-                  {chat.title}
-                </Link>
+                <ChatSidebarLink
+                  chatId={chat.id}
+                  title={chat.title}
+                  isActive={chat.id === chatId}
+                />
               </div>
             ))
           ) : (

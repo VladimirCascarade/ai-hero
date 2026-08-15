@@ -1,19 +1,20 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
+import type { OurMessage } from "~/types";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId: string;
-  initialMessages: UIMessage[];
+  initialMessages: OurMessage[];
   isNewChat: boolean;
 }
 
@@ -26,7 +27,8 @@ export const ChatPage = ({
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
-  const { messages, status, sendMessage } = useChat({
+
+  const { messages, status, sendMessage } = useChat<OurMessage>({
     transport: new DefaultChatTransport({
       body: {
         chatId,
@@ -46,6 +48,20 @@ export const ChatPage = ({
       }
     },
   });
+
+  const prevStatusRef = useRef(status);
+
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = status;
+
+    if (
+      (prevStatus === "streaming" || prevStatus === "submitted") &&
+      status === "ready"
+    ) {
+      router.refresh();
+    }
+  }, [status, router]);
 
   const [input, setInput] = useState("");
   const isLoading = status === "streaming" || status === "submitted";

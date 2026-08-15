@@ -1,12 +1,17 @@
 import { createScorer } from "evalite";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { answerRelevancyModel } from "./model";
 
 // Step 1: Break output into statements
-export async function generateStatements(output: string): Promise<string[]> {
-  const { object } = await generateObject({
+export async function generateStatements(text: string): Promise<string[]> {
+  const { output } = await generateText({
     model: answerRelevancyModel,
+    output: Output.object({
+      schema: z.object({
+        statements: z.array(z.string()),
+      }),
+    }),
     prompt: `Given the text, break it down into meaningful statements while preserving context and relationships.
 Don't split too aggressively.
 
@@ -32,15 +37,12 @@ Please return only JSON format with "statements" array.
 Return empty list for empty input.
 
 Text:
-${output}
+${text}
 
 JSON:
 `,
-    schema: z.object({
-      statements: z.array(z.string()),
-    }),
   });
-  return object.statements;
+  return output.statements;
 }
 
 // Step 2: Score each statement for relevancy
@@ -58,8 +60,18 @@ export async function scoreRelevancy(opts: {
   input: string;
   statements: string[];
 }) {
-  const { object } = await generateObject({
+  const { output } = await generateText({
     model: answerRelevancyModel,
+    output: Output.object({
+      schema: z.object({
+        verdicts: z.array(
+          z.object({
+            verdict: z.enum(["yes", "no", "unsure"]),
+            reason: z.string(),
+          }),
+        ),
+      }),
+    }),
     system: ANSWER_RELEVANCY_AGENT_INSTRUCTIONS,
     prompt: `Evaluate each statement's relevance to the input question, considering direct answers, related context, and uncertain cases.
 
@@ -186,16 +198,8 @@ The number of verdicts MUST MATCH the number of statements exactly.
 
   JSON:
   `,
-    schema: z.object({
-      verdicts: z.array(
-        z.object({
-          verdict: z.enum(["yes", "no", "unsure"]),
-          reason: z.string(),
-        }),
-      ),
-    }),
   });
-  return object.verdicts;
+  return output.verdicts;
 }
 
 export const AnswerRelevancy = createScorer<string, string, string>({

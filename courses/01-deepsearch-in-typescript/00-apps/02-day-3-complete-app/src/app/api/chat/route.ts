@@ -1,5 +1,8 @@
-import type { UIMessage } from "ai";
-import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  NoObjectGeneratedError,
+} from "ai";
 import { auth } from "~/server/auth";
 import { upsertChat } from "~/server/db/queries";
 import { eq } from "drizzle-orm";
@@ -8,11 +11,14 @@ import { chats } from "~/server/db/schema";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { streamFromDeepSearch } from "~/deep-search";
+import { GENERATING_CHAT_TITLE } from "~/chat-title";
+import { generateChatTitle } from "~/generate-chat-title";
 import {
   checkRateLimit,
   recordRateLimit,
   type RateLimitConfig,
 } from "~/server/redis/checkRateLimit";
+import type { OurMessage } from "~/types";
 import { messageToString } from "~/utils";
 
 const langfuse = new Langfuse({
@@ -48,7 +54,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
-    messages: Array<UIMessage>;
+    messages: Array<OurMessage>;
     chatId: string;
     isNewChat: boolean;
   };
@@ -65,12 +71,22 @@ export async function POST(request: Request) {
     userId: session.user.id,
   });
 
+  const telemetry = {
+    langfuseTraceId: trace.id,
+    metadata: {
+      chatId,
+    },
+  };
+
+  const titlePromise = isNewChat
+    ? generateChatTitle(messages, telemetry)
+    : Promise.resolve("");
+
   if (isNewChat) {
-    const lastMessage = messages[messages.length - 1]!;
     const upsertChatInitialInput = {
       userId: session.user.id,
       chatId,
-      title: messageToString(lastMessage).slice(0, 50) + "...",
+      title: GENERATING_CHAT_TITLE,
       messages,
     };
     const upsertChatInitialSpan = trace.span({
@@ -94,7 +110,8 @@ export async function POST(request: Request) {
     }
   }
 
-  const stream = createUIMessageStream({
+  const stream = createUIMessageStream<OurMessage>({
+    originalMessages: messages,
     execute: async ({ writer }) => {
       if (isNewChat) {
         writer.write({
@@ -106,34 +123,42 @@ export async function POST(request: Request) {
 
       const result = await streamFromDeepSearch({
         messages,
-        telemetry: {
-          isEnabled: true,
-          functionId: "chat-agent-api-route",
-          metadata: {
-            langfuseTraceId: trace.id,
-          },
-        },
+        telemetry,
+        writeMessagePart: writer.write,
       });
 
-      writer.merge(result.toUIMessageStream());
+      writer.merge(result.toUIMessageStream({ sendStart: false }));
     },
     onError: (e) => {
       console.error(e);
+
+      if (NoObjectGeneratedError.isInstance(e)) {
+        return "The model returned an invalid response. Please try sending your message again.";
+      }
+
       return "Oops, an error occurred!";
     },
-    onFinish: async (response) => {
-      const entireConversation = [...messages, ...response.messages];
+    onFinish: async ({ messages: entireConversation }) => {
       const lastMessage = entireConversation[entireConversation.length - 1];
 
       if (!lastMessage) {
         return;
       }
 
+      const generatedTitle = await titlePromise.catch(() => "");
+      const fallbackTitle =
+        messageToString(
+          entireConversation.find((message) => message.role === "user") ??
+            lastMessage,
+        ).slice(0, 50) + "...";
+
       const upsertChatFinalInput = {
         userId: session.user.id,
         chatId,
-        title: messageToString(lastMessage).slice(0, 50) + "...",
         messages: entireConversation,
+        ...(isNewChat
+          ? { title: generatedTitle || fallbackTitle }
+          : {}),
       };
       const upsertChatFinalSpan = trace.span({
         name: "upsert-chat-final",

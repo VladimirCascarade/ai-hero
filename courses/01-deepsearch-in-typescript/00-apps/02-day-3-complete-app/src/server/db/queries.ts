@@ -6,7 +6,7 @@ import { eq, and } from "drizzle-orm";
 export const upsertChat = async (opts: {
   userId: string;
   chatId: string;
-  title: string;
+  title?: string;
   messages: UIMessage[];
 }) => {
   const { userId, chatId, title, messages: newMessages } = opts;
@@ -19,8 +19,21 @@ export const upsertChat = async (opts: {
     if (existingChat.userId !== userId) {
       throw new Error("Chat ID not found.");
     }
+
+    await db
+      .update(chats)
+      .set({
+        ...(title !== undefined ? { title } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(chats.id, chatId));
+
     await db.delete(messages).where(eq(messages.chatId, chatId));
   } else {
+    if (title === undefined) {
+      throw new Error("Title is required when creating a new chat.");
+    }
+
     await db.insert(chats).values({
       id: chatId,
       userId,
@@ -30,7 +43,7 @@ export const upsertChat = async (opts: {
 
   await db.insert(messages).values(
     newMessages.map((message, index) => ({
-      id: crypto.randomUUID(),
+      id: message.id ?? crypto.randomUUID(),
       chatId,
       role: message.role,
       parts: message.parts,

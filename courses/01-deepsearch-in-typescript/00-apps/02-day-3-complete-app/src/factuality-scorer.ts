@@ -1,5 +1,5 @@
 import { createScorer } from "evalite";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { factualityModel } from "./model";
 
@@ -8,8 +8,16 @@ export const checkFactuality = async (opts: {
   groundTruth: string;
   submission: string;
 }) => {
-  const { object } = await generateObject({
+  const { output } = await generateText({
     model: factualityModel,
+    output: Output.object({
+      schema: z.object({
+        answer: z.enum(["A", "B", "C", "D", "E"]).describe("Your selection."),
+        rationale: z
+          .string()
+          .describe("Why you chose this answer. Be very detailed."),
+      }),
+    }),
     /**
      * Prompt taken from autoevals:
      *
@@ -35,12 +43,6 @@ export const checkFactuality = async (opts: {
       (D) There is a disagreement between the submitted answer and the expert answer.
       (E) The answers differ, but these differences don't matter from the perspective of factuality.
     `,
-    schema: z.object({
-      answer: z.enum(["A", "B", "C", "D", "E"]).describe("Your selection."),
-      rationale: z
-        .string()
-        .describe("Why you chose this answer. Be very detailed."),
-    }),
   });
 
   /**
@@ -55,9 +57,9 @@ export const checkFactuality = async (opts: {
   };
 
   return {
-    score: scores[object.answer],
+    score: scores[output.answer],
     metadata: {
-      rationale: object.rationale,
+      rationale: output.rationale,
     },
   };
 };
