@@ -23,6 +23,7 @@ const APPS = [
   "03-day-4-app",
   "04-day-6-app",
   "05-day-8-app",
+  "05.5-day-8-app-with-resumable-streams",
   "06-final-app",
   "07-migrated-to-v5",
 ];

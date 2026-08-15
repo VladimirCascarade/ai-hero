@@ -25,6 +25,7 @@ Single doc for the whole migration. **Code patterns**: `07-migrated-to-v5`. **En
 | `03-day-4-app` | `6.0.0` | OpenRouter | **Done** | Tool loop + v6 UI stream |
 | `04-day-6-app` | `6.0.0` | OpenRouter | **Done** | Tool loop + v6 UI stream |
 | `05-day-8-app` | `6.0.0` | OpenRouter | **Done** | Agent loop; annotations → `data-new-action` |
+| `05.5-day-8-app-with-resumable-streams` | `6.0.0` | OpenRouter | **Done** | Resumable streams via `consumeSseStream` + `resume: true` |
 | `06-final-app` | `6.0.0` | OpenRouter | **Done** | Full agent loop + guardrails |
 | `07-migrated-to-v5` | `6.0.0` | OpenRouter | **Done** | Reference implementation |
 
