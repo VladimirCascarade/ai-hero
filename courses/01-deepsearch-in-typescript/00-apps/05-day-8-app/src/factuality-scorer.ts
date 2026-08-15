@@ -38,7 +38,7 @@ export const checkFactuality = async (opts: {
     }),
   });
 
-  const scores = {
+  const scores: Record<"A" | "B" | "C" | "D" | "E", number> = {
     A: 0.4,
     B: 0.6,
     C: 1,
@@ -47,7 +47,7 @@ export const checkFactuality = async (opts: {
   };
 
   return {
-    score: scores[object.answer],
+    score: scores[object.answer as keyof typeof scores],
     metadata: {
       rationale: object.rationale,
     },

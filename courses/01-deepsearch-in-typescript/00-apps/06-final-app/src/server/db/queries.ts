@@ -1,13 +1,13 @@
 import { db } from "./index.ts";
 import { chats, messages } from "./schema.ts";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 import { eq, and } from "drizzle-orm";
 
 export const upsertChat = async (opts: {
   userId: string;
   chatId: string;
   title: string;
-  messages: Message[];
+  messages: UIMessage[];
 }) => {
   const { userId, chatId, title, messages: newMessages } = opts;
 
@@ -39,7 +39,6 @@ export const upsertChat = async (opts: {
       chatId,
       role: message.role,
       parts: message.parts,
-      annotations: message.annotations,
       order: index,
     })),
   );
@@ -68,8 +67,7 @@ export const getChat = async (opts: { userId: string; chatId: string }) => {
     messages: chat.messages.map((message) => ({
       id: message.id,
       role: message.role,
-      content: message.parts,
-      annotations: message.annotations ?? [],
+      parts: message.parts,
     })),
   };
 };

@@ -4,7 +4,7 @@ import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
 import { getChats, getChat } from "~/server/db/queries";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 
 export default async function HomePage({
   searchParams,
@@ -16,30 +16,20 @@ export default async function HomePage({
   const isAuthenticated = !!session?.user;
   const { id: chatId } = await searchParams;
 
-  // Fetch chats if user is authenticated
   const chats =
     isAuthenticated && session.user?.id
       ? await getChats({ userId: session.user.id })
       : [];
 
-  // Fetch active chat if chatId is present and user is authenticated
   const activeChat =
     chatId && isAuthenticated && session.user?.id
       ? await getChat({ userId: session.user.id, chatId })
       : null;
 
-  // Map the messages to the correct format for useChat
-  const initialMessages =
-    activeChat?.messages.map((msg) => ({
-      id: msg.id,
-      role: msg.role as "user" | "assistant",
-      parts: msg.content as Message["parts"],
-      content: "",
-    })) ?? [];
+  const initialMessages: UIMessage[] = activeChat?.messages ?? [];
 
   return (
     <div className="flex h-screen bg-gray-950">
-      {/* Sidebar */}
       <div className="flex w-64 flex-col border-r border-gray-700 bg-gray-900">
         <div className="p-4">
           <div className="flex items-center justify-between">

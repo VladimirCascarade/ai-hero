@@ -1,6 +1,6 @@
 import { evalite } from "evalite";
 import { askDeepSearch } from "../src/deep-search";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 import { Factuality } from "~/factuality-scorer";
 
 evalite("Deep Search Eval", {
@@ -18,11 +18,11 @@ evalite("Deep Search Eval", {
     ];
   },
   task: async (input) => {
-    const messages: Message[] = [
+    const messages: UIMessage[] = [
       {
         id: "1",
         role: "user",
-        content: input,
+        parts: [{ type: "text", text: input }],
       },
     ];
     return askDeepSearch(messages);

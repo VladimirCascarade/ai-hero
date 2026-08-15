@@ -1,3 +1,4 @@
+import type { UIMessage } from "ai";
 import type { Action } from "./get-next-action.ts";
 
 type Source = {
@@ -7,19 +8,19 @@ type Source = {
   favicon?: string;
 };
 
-export type OurMessageAnnotation =
-  | {
-      type: "NEW_ACTION";
-      action: Action;
-    }
-  | {
-      type: "SOURCES";
-      sources: Source[];
-    }
-  | {
-      type: "USAGE";
+export type OurMessage = UIMessage<
+  never,
+  {
+    "new-action": Action;
+    sources: Source[];
+    usage: {
       totalTokens: number;
     };
+    "new-chat-created": {
+      chatId: string;
+    };
+  }
+>;
 
 export type GuardrailResult = {
   classification: "allow" | "refuse";

@@ -1,4 +1,5 @@
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
+import { messageToString } from "./utils";
 
 type QueryResultSearchResult = {
   date: string;
@@ -21,27 +22,12 @@ const toQueryResult = (query: QueryResultSearchResult) =>
   [`### ${query.date} - ${query.title}`, query.url, query.snippet].join("\n\n");
 
 export class SystemContext {
-  /**
-   * The current step in the loop
-   */
   private step = 0;
-
-  /**
-   * The message history
-   */
-  private readonly messages: Message[];
-
-  /**
-   * The history of all queries searched
-   */
+  private readonly messages: UIMessage[];
   private queryHistory: QueryResult[] = [];
-
-  /**
-   * The history of all URLs scraped
-   */
   private scrapeHistory: ScrapeResult[] = [];
 
-  constructor(messages: Message[]) {
+  constructor(messages: UIMessage[]) {
     this.messages = messages;
   }
 
@@ -49,7 +35,7 @@ export class SystemContext {
     return this.messages
       .map((message) => {
         const role = message.role === "user" ? "User" : "Assistant";
-        return `<${role}>${message.content}</${role}>`;
+        return `<${role}>${messageToString(message)}</${role}>`;
       })
       .join("\n\n");
   }

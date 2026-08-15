@@ -117,7 +117,7 @@ export async function checkRateLimit({
       remaining: maxRequests - 1,
       resetTime: windowStart + windowMs,
       totalHits: 0,
-      retry: async () => {},
+      retry: async () => true,
     };
   }
 }

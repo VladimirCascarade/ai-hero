@@ -1,9 +1,15 @@
-import { streamText, type Message, type TelemetrySettings } from "ai";
+import {
+  streamText,
+  tool,
+  stepCountIs,
+  convertToModelMessages,
+  type UIMessage,
+  type TelemetrySettings,
+} from "ai";
 import { model } from "./model";
 import { z } from "zod";
 import { searchSerper } from "./serper";
 import { env } from "./env";
-import type { Tool, ToolExecutionOptions } from "ai";
 import { bulkCrawlWebsites } from "./server/scraper";
 import { cacheWithRedis } from "./server/redis/redis";
 
@@ -29,65 +35,63 @@ When using the scrapePages tool, follow these steps:
 - Provide a well-rounded answer by synthesizing information from these diverse sources.
 `;
 
-export const tools: Record<string, Tool> = {
-  searchWeb: {
-    parameters: z.object({
-      query: z.string().describe("The query to search the web for"),
-    }),
-    execute: async (args: { query: string }, options: ToolExecutionOptions) => {
-      const { query } = args;
-      const { abortSignal } = options;
-      const results = await searchSerper(
-        { q: query, num: env.SEARCH_RESULTS_COUNT },
-        abortSignal,
-      );
-      return results.organic.map((result) => ({
-        title: result.title,
-        link: result.link,
-        snippet: result.snippet,
-        date: result.date,
-      }));
-    },
-  },
-  scrapePages: {
-    parameters: z.object({
-      urls: z
-        .array(z.string())
-        .describe(
-          "A list of URLs to scrape for full page content in markdown format.",
-        ),
-    }),
-    execute: cacheWithRedis("scrapePages", async ({ urls }) => {
-      const result = await bulkCrawlWebsites({ urls });
-      // Return a map of url -> markdown or error
-      return result.results.map(({ url, result }) =>
-        result.success
-          ? { url, markdown: result.data }
-          : { url, error: result.error },
-      );
-    }),
-  },
-};
-
-export const streamFromDeepSearch = (opts: {
-  messages: Message[];
-  onFinish: Parameters<typeof streamText>[0]["onFinish"];
+export const streamFromDeepSearch = async (opts: {
+  messages: UIMessage[];
   telemetry: TelemetrySettings;
-}) =>
-  streamText({
+}) => {
+  const modelMessages = await convertToModelMessages(opts.messages);
+
+  return streamText({
     model,
-    messages: opts.messages,
-    maxSteps: 10,
+    messages: modelMessages,
+    stopWhen: stepCountIs(10),
     system: systemPrompt,
-    tools,
-    onFinish: opts.onFinish,
+    tools: {
+      searchWeb: tool({
+        description: "Search the web for information",
+        inputSchema: z.object({
+          query: z.string().describe("The query to search the web for"),
+        }),
+        execute: async ({ query }, { abortSignal }) => {
+          const results = await searchSerper(
+            { q: query, num: env.SEARCH_RESULTS_COUNT },
+            abortSignal,
+          );
+          return results.organic.map((result) => ({
+            title: result.title,
+            link: result.link,
+            snippet: result.snippet,
+            date: result.date,
+          }));
+        },
+      }),
+      scrapePages: tool({
+        description:
+          "Scrape full page content in markdown format from a list of URLs",
+        inputSchema: z.object({
+          urls: z
+            .array(z.string())
+            .describe(
+              "A list of URLs to scrape for full page content in markdown format.",
+            ),
+        }),
+        execute: cacheWithRedis("scrapePages", async ({ urls }) => {
+          const result = await bulkCrawlWebsites({ urls });
+          return result.results.map(({ url, result }) =>
+            result.success
+              ? { url, markdown: result.data }
+              : { url, error: result.error },
+          );
+        }),
+      }),
+    },
     experimental_telemetry: opts.telemetry,
   });
+};
 
-export async function askDeepSearch(messages: Message[]) {
-  const result = streamFromDeepSearch({
+export async function askDeepSearch(messages: UIMessage[]) {
+  const result = await streamFromDeepSearch({
     messages,
-    onFinish: () => {}, // stub
     telemetry: {
       isEnabled: false,
     },

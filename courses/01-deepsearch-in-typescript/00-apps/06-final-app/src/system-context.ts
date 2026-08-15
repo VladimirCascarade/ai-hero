@@ -1,4 +1,5 @@
-import type { Message } from "ai";
+import type { LanguageModelUsage, UIMessage } from "ai";
+import { messageToString } from "./utils.ts";
 
 type SearchResult = {
   date: string;
@@ -32,7 +33,7 @@ export class SystemContext {
   /**
    * The message history
    */
-  private readonly messages: Message[];
+  private readonly messages: UIMessage[];
 
   /**
    * The history of all queries searched and content scraped
@@ -46,7 +47,7 @@ export class SystemContext {
 
   private usages: TokenUsage[] = [];
 
-  constructor(messages: Message[]) {
+  constructor(messages: UIMessage[]) {
     this.messages = messages;
   }
 
@@ -54,7 +55,7 @@ export class SystemContext {
     return this.messages
       .map((message) => {
         const role = message.role === "user" ? "User" : "Assistant";
-        return `<${role}>${message.content}</${role}>`;
+        return `<${role}>${messageToString(message)}</${role}>`;
       })
       .join("\n\n");
   }
@@ -99,19 +100,12 @@ export class SystemContext {
       .join("\n\n");
   }
 
-  reportUsage(
-    descriptor: string,
-    usage: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    },
-  ) {
+  reportUsage(descriptor: string, usage: LanguageModelUsage) {
     this.usages.push({
       descriptor,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      totalTokens: usage.totalTokens,
+      promptTokens: usage.inputTokens ?? 0,
+      completionTokens: usage.outputTokens ?? 0,
+      totalTokens: usage.totalTokens ?? 0,
     });
   }
 

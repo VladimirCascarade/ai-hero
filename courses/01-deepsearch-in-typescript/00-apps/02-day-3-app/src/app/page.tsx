@@ -4,7 +4,7 @@ import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
 import { getChats, getChat } from "~/server/db/queries";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 
 export default async function HomePage({
   searchParams,
@@ -33,12 +33,11 @@ export default async function HomePage({
       : null;
 
   // Map the messages to the correct format for useChat
-  const initialMessages =
+  const initialMessages: UIMessage[] =
     activeChat?.messages.map((msg) => ({
       id: msg.id,
-      role: msg.role as "user" | "assistant",
+      role: msg.role,
       parts: msg.parts,
-      content: "",
     })) ?? [];
 
   return (

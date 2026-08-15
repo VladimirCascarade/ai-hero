@@ -1,7 +1,7 @@
 // Note: You'll want to modify these evals, since they may be out of date.
 // You should choose your own evals because we are actively testing for recency.
 
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 import { evalite } from "evalite";
 import { askDeepSearch } from "~/deep-search";
 import { Factuality } from "~/factuality-scorer";
@@ -24,11 +24,11 @@ evalite("Arsenal", {
     return data;
   },
   task: async (input) => {
-    const messages: Message[] = [
+    const messages: UIMessage[] = [
       {
         id: "1",
         role: "user",
-        content: input,
+        parts: [{ type: "text", text: input }],
       },
     ];
     return askDeepSearch(messages);

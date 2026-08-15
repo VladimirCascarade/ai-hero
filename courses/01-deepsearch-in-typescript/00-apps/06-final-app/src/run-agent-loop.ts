@@ -2,22 +2,22 @@ import { SystemContext } from "./system-context.ts";
 import { getNextAction } from "./get-next-action.ts";
 import { searchSerper } from "./serper.ts";
 import { bulkCrawlWebsites } from "./server/scraper.ts";
-import { streamText, type StreamTextResult, type Message } from "ai";
+import { streamText, type UIMessage, type UIMessageStreamWriter } from "ai";
 import { model } from "~/model";
 import { answerQuestion } from "./answer-question.ts";
-import type { OurMessageAnnotation } from "./types.ts";
+import type { OurMessage } from "./types.ts";
 import { summarizeURL } from "./summarize-url.ts";
 import { queryRewriter } from "./query-rewriter.ts";
 import { checkIsSafe } from "./guardrails.ts";
 
 export async function runAgentLoop(
-  messages: Message[],
+  messages: UIMessage[],
   opts: {
     langfuseTraceId?: string;
-    writeMessageAnnotation?: (annotation: OurMessageAnnotation) => void;
-    onFinish: Parameters<typeof streamText>[0]["onFinish"];
+    writeMessagePart?: UIMessageStreamWriter<OurMessage>["write"];
   },
-): Promise<StreamTextResult<{}, string>> {
+) {
+  const usageDataPartId = crypto.randomUUID();
   // A persistent container for the state of our system
   const ctx = new SystemContext(messages);
 
@@ -31,7 +31,6 @@ export async function runAgentLoop(
         "You are a content safety guardrail. Refuse to answer unsafe questions.",
       prompt:
         guardrailResult.reason || "Sorry, I can't help with that request.",
-      onFinish: opts.onFinish,
     });
   }
 
@@ -76,10 +75,10 @@ export async function runAgentLoop(
     );
 
     // 5. Send unique sources to frontend
-    if (opts.writeMessageAnnotation) {
-      opts.writeMessageAnnotation({
-        type: "SOURCES",
-        sources: uniqueSources,
+    if (opts.writeMessagePart) {
+      opts.writeMessagePart({
+        type: "data-sources",
+        data: uniqueSources,
       });
     }
 
@@ -153,10 +152,10 @@ export async function runAgentLoop(
     }
 
     // Send the action as an annotation if writeMessageAnnotation is provided
-    if (opts.writeMessageAnnotation) {
-      opts.writeMessageAnnotation({
-        type: "NEW_ACTION",
-        action: nextAction,
+    if (opts.writeMessagePart) {
+      opts.writeMessagePart({
+        type: "data-new-action",
+        data: nextAction,
       });
       // Send token usage annotation
       const usages = ctx.getUsages();
@@ -165,9 +164,12 @@ export async function runAgentLoop(
           (sum, u) => sum + (u.totalTokens || 0),
           0,
         );
-        opts.writeMessageAnnotation({
-          type: "USAGE",
-          totalTokens,
+        opts.writeMessagePart({
+          id: usageDataPartId,
+          type: "data-usage",
+          data: {
+            totalTokens,
+          },
         });
       }
     }

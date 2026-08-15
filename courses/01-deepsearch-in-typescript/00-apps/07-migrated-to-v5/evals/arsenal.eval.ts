@@ -171,7 +171,7 @@ This information should provide a solid foundation for creating your Electron au
       {
         id: "1",
         role: "user",
-        content: input,
+        parts: [{ type: "text", text: input }],
       },
     ];
     return askDeepSearch(messages);

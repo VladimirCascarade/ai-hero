@@ -1,0 +1,2 @@
+# Local secrets — synced to each app via shared/sync-env.mjs
+.env.shared

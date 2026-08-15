@@ -2,12 +2,7 @@ import { SystemContext } from "./system-context.ts";
 import { getNextAction } from "./get-next-action.ts";
 import { searchSerper } from "./serper.ts";
 import { bulkCrawlWebsites } from "./server/scraper.ts";
-import {
-  streamText,
-  type StreamTextResult,
-  type UIMessage,
-  type UIMessageStreamWriter,
-} from "ai";
+import { streamText, type UIMessage, type UIMessageStreamWriter } from "ai";
 import { model } from "~/model";
 import { answerQuestion } from "./answer-question.ts";
 import type { OurMessage } from "./types.ts";
@@ -21,7 +16,7 @@ export async function runAgentLoop(
     langfuseTraceId?: string;
     writeMessagePart?: UIMessageStreamWriter<OurMessage>["write"];
   },
-): Promise<StreamTextResult<{}, string>> {
+) {
   const usageDataPartId = crypto.randomUUID();
   // A persistent container for the state of our system
   const ctx = new SystemContext(messages);

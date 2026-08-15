@@ -1,5 +1,5 @@
-import type { Message } from "ai";
-import { createDataStreamResponse, appendResponseMessages } from "ai";
+import type { UIMessage } from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { auth } from "~/server/auth";
 import { upsertChat } from "~/server/db/queries";
 import { eq } from "drizzle-orm";
@@ -13,6 +13,7 @@ import {
   recordRateLimit,
   type RateLimitConfig,
 } from "~/server/redis/checkRateLimit";
+import { messageToString } from "~/utils";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -21,7 +22,7 @@ const langfuse = new Langfuse({
 const rateLimitConfig: RateLimitConfig = {
   maxRequests: 5,
   maxRetries: 3,
-  windowMs: 170_000, // 60 seconds
+  windowMs: 170_000,
   keyPrefix: "chat",
 };
 
@@ -34,12 +35,9 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // Check rate limit before processing the request
   const rateLimitCheck = await checkRateLimit(rateLimitConfig);
-  console.log(">>>Rate limit check status: ", rateLimitCheck);
 
   if (!rateLimitCheck.allowed) {
-    console.log("Rate limit exceeded, waiting...");
     const isAllowed = await rateLimitCheck.retry();
 
     if (!isAllowed) {
@@ -50,7 +48,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
-    messages: Array<Message>;
+    messages: Array<UIMessage>;
     chatId: string;
     isNewChat: boolean;
   };
@@ -67,12 +65,12 @@ export async function POST(request: Request) {
     userId: session.user.id,
   });
 
-  // If no chatId is provided, create a new chat with the user's message
   if (isNewChat) {
+    const lastMessage = messages[messages.length - 1]!;
     const upsertChatInitialInput = {
       userId: session.user.id,
       chatId,
-      title: messages[messages.length - 1].content.slice(0, 50) + "...",
+      title: messageToString(lastMessage).slice(0, 50) + "...",
       messages,
     };
     const upsertChatInitialSpan = trace.span({
@@ -96,63 +94,60 @@ export async function POST(request: Request) {
     }
   }
 
-  return createDataStreamResponse({
-    execute: async (dataStream) => {
-      // If this is a new chat, send the chat ID to the frontend
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
       if (isNewChat) {
-        dataStream.writeData({
-          type: "NEW_CHAT_CREATED",
-          chatId: chatId,
+        writer.write({
+          type: "data-new-chat-created",
+          data: { chatId },
+          transient: true,
         });
       }
 
-      const result = streamFromDeepSearch({
+      const result = await streamFromDeepSearch({
         messages,
-        onFinish: async ({ response }) => {
-          // Merge the existing messages with the response messages
-          const updatedMessages = appendResponseMessages({
-            messages,
-            responseMessages: response.messages,
-          });
-
-          const lastMessage = messages[messages.length - 1];
-          if (!lastMessage) {
-            return;
-          }
-
-          const upsertChatFinalInput = {
-            userId: session.user.id,
-            chatId,
-            title: lastMessage.content.slice(0, 50) + "...",
-            messages: updatedMessages,
-          };
-          const upsertChatFinalSpan = trace.span({
-            name: "upsert-chat-final",
-            input: upsertChatFinalInput,
-          });
-          const result = await upsertChat(upsertChatFinalInput);
-          upsertChatFinalSpan.end({ output: result });
-
-          // Plugin Langfuse observability
-          await langfuse.flushAsync();
-
-          // Record the request after successful rate limit check
-          await recordRateLimit(rateLimitConfig);
-        },
         telemetry: {
           isEnabled: true,
-          functionId: `chat-agent-api-route`,
+          functionId: "chat-agent-api-route",
           metadata: {
             langfuseTraceId: trace.id,
           },
         },
       });
 
-      result.mergeIntoDataStream(dataStream);
+      writer.merge(result.toUIMessageStream());
     },
     onError: (e) => {
       console.error(e);
       return "Oops, an error occurred!";
     },
+    onFinish: async (response) => {
+      const entireConversation = [...messages, ...response.messages];
+      const lastMessage = entireConversation[entireConversation.length - 1];
+
+      if (!lastMessage) {
+        return;
+      }
+
+      const upsertChatFinalInput = {
+        userId: session.user.id,
+        chatId,
+        title: messageToString(lastMessage).slice(0, 50) + "...",
+        messages: entireConversation,
+      };
+      const upsertChatFinalSpan = trace.span({
+        name: "upsert-chat-final",
+        input: upsertChatFinalInput,
+      });
+      const result = await upsertChat(upsertChatFinalInput);
+      upsertChatFinalSpan.end({ output: result });
+
+      await langfuse.flushAsync();
+      await recordRateLimit(rateLimitConfig);
+    },
+  });
+
+  return createUIMessageStreamResponse({
+    stream,
   });
 }

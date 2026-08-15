@@ -1,9 +1,4 @@
-import {
-  streamText,
-  type UIMessage,
-  type StreamTextResult,
-  type UIMessageStreamWriter,
-} from "ai";
+import { type UIMessage, type UIMessageStreamWriter } from "ai";
 import { runAgentLoop } from "./run-agent-loop.ts";
 import type { OurMessage } from "./types.ts";
 
@@ -11,7 +6,7 @@ export const streamFromDeepSearch = async (opts: {
   messages: UIMessage[];
   langfuseTraceId?: string;
   writeMessagePart?: UIMessageStreamWriter<OurMessage>["write"];
-}): Promise<StreamTextResult<{}, string>> => {
+}) => {
   return runAgentLoop(opts.messages, {
     langfuseTraceId: opts.langfuseTraceId,
     writeMessagePart: opts.writeMessagePart,

@@ -1,5 +1,5 @@
-import type { Message } from "ai";
-import { createDataStreamResponse, appendResponseMessages } from "ai";
+import type { UIMessage } from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { auth } from "~/server/auth";
 import { upsertChat } from "~/server/db/queries";
 import { eq } from "drizzle-orm";
@@ -8,7 +8,8 @@ import { chats } from "~/server/db/schema";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { streamFromDeepSearch } from "~/deep-search";
-import type { OurMessageAnnotation } from "~/types";
+import type { OurMessage } from "~/types";
+import { messageToString } from "~/utils";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
-    messages: Array<Message>;
+    messages: Array<UIMessage>;
     chatId?: string;
   };
 
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
     await upsertChat({
       userId: session.user.id,
       chatId: newChatId,
-      title: messages[messages.length - 1]!.content.slice(0, 50) + "...",
+      title:
+        messageToString(messages[messages.length - 1]!).slice(0, 50) + "...",
       messages: messages, // Only save the user's message initially
     });
     currentChatId = newChatId;
@@ -61,59 +63,53 @@ export async function POST(request: Request) {
     userId: session.user.id,
   });
 
-  return createDataStreamResponse({
-    execute: async (dataStream) => {
+  const stream = createUIMessageStream<OurMessage>({
+    execute: async ({ writer }) => {
       // If this is a new chat, send the chat ID to the frontend
       if (!chatId) {
-        dataStream.writeData({
-          type: "NEW_CHAT_CREATED",
-          chatId: currentChatId,
+        writer.write({
+          type: "data-new-chat-created",
+          data: {
+            chatId: currentChatId,
+          },
+          transient: true,
         });
       }
 
-      const annotations: OurMessageAnnotation[] = [];
-
       const result = await streamFromDeepSearch({
         messages,
-        onFinish: async ({ response }) => {
-          // Merge the existing messages with the response messages
-          const updatedMessages = appendResponseMessages({
-            messages,
-            responseMessages: response.messages,
-          });
-
-          const lastMessage = updatedMessages[updatedMessages.length - 1];
-          if (!lastMessage) {
-            return;
-          }
-
-          // Add the annotations to the last message
-          lastMessage.annotations = annotations;
-
-          // Save the complete chat history
-          await upsertChat({
-            userId: session.user.id,
-            chatId: currentChatId,
-            title: lastMessage.content.slice(0, 50) + "...",
-            messages: updatedMessages,
-          });
-
-          await langfuse.flushAsync();
-        },
         langfuseTraceId: trace.id,
-        writeMessageAnnotation: (annotation) => {
-          // Save the annotation in-memory
-          annotations.push(annotation);
-          // Send it to the client
-          dataStream.writeMessageAnnotation(annotation);
-        },
+        writeMessagePart: writer.write,
       });
 
-      result.mergeIntoDataStream(dataStream);
+      writer.merge(result.toUIMessageStream());
     },
     onError: (e) => {
       console.error(e);
       return "Oops, an error occurred!";
     },
+    onFinish: async (response) => {
+      // Merge the existing messages with the response messages
+      const entireConversation = [...messages, ...response.messages];
+
+      const lastMessage = entireConversation[entireConversation.length - 1];
+      if (!lastMessage) {
+        return;
+      }
+
+      // Save the complete chat history
+      await upsertChat({
+        userId: session.user.id,
+        chatId: currentChatId,
+        title: messageToString(lastMessage).slice(0, 50) + "...",
+        messages: entireConversation,
+      });
+
+      await langfuse.flushAsync();
+    },
+  });
+
+  return createUIMessageStreamResponse({
+    stream,
   });
 }
