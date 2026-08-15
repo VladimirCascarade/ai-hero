@@ -1,7 +1,8 @@
 import ReactMarkdown, { type Components } from "react-markdown";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
+import { isToolUIPart } from "ai";
 
-type MessagePart = NonNullable<Message["parts"]>[number];
+type MessagePart = UIMessage["parts"][number];
 
 interface ChatMessageProps {
   parts: MessagePart[];
@@ -10,7 +11,6 @@ interface ChatMessageProps {
 }
 
 const components: Components = {
-  // Override default elements with custom styling
   p: ({ children }) => <p className="mb-4 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="mb-4 list-disc pl-4">{children}</ul>,
   ol: ({ children }) => <ol className="mb-4 list-decimal pl-4">{children}</ol>,
@@ -41,35 +41,34 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-const ToolInvocation = ({
-  part,
-}: {
-  part: Extract<MessagePart, { type: "tool-invocation" }>;
-}) => {
-  const { toolInvocation } = part;
-  const { state, toolName, args } = toolInvocation;
+const ToolPart = ({ part }: { part: MessagePart }) => {
+  if (!isToolUIPart(part)) {
+    return null;
+  }
 
   return (
     <div className="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-sm font-medium text-gray-400">Tool:</span>
-        <span className="text-sm text-gray-300">{toolName}</span>
+        <span className="text-sm text-gray-300">{part.type.replace("tool-", "")}</span>
       </div>
       <div className="mb-2">
         <span className="text-sm font-medium text-gray-400">State:</span>
-        <span className="ml-2 text-sm text-gray-300">{state}</span>
+        <span className="ml-2 text-sm text-gray-300">{part.state}</span>
       </div>
-      <div className="mb-2">
-        <span className="text-sm font-medium text-gray-400">Arguments:</span>
-        <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-          {JSON.stringify(args, null, 2)}
-        </pre>
-      </div>
-      {toolInvocation.state === "result" && toolInvocation.result && (
-        <div>
-          <span className="text-sm font-medium text-gray-400">Result:</span>
+      {"input" in part && part.input != null && (
+        <div className="mb-2">
+          <span className="text-sm font-medium text-gray-400">Input:</span>
           <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-            {JSON.stringify(toolInvocation.result, null, 2)}
+            {JSON.stringify(part.input, null, 2)}
+          </pre>
+        </div>
+      )}
+      {"output" in part && part.output != null && (
+        <div>
+          <span className="text-sm font-medium text-gray-400">Output:</span>
+          <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
+            {JSON.stringify(part.output, null, 2)}
           </pre>
         </div>
       )}
@@ -96,8 +95,8 @@ export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
             if (part.type === "text") {
               return <Markdown key={index}>{part.text}</Markdown>;
             }
-            if (part.type === "tool-invocation") {
-              return <ToolInvocation key={index} part={part} />;
+            if (isToolUIPart(part)) {
+              return <ToolPart key={index} part={part} />;
             }
             return null;
           })}

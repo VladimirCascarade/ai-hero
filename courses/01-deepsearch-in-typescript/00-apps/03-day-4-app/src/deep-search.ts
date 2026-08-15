@@ -1,18 +1,26 @@
-import { streamText, type Message, type TelemetrySettings } from "ai";
-import { model } from "~/model";
-import { searchSerper } from "~/serper";
-import { bulkCrawlWebsites } from "~/server/scraper";
+import {
+  streamText,
+  tool,
+  stepCountIs,
+  convertToModelMessages,
+  type UIMessage,
+  type TelemetrySettings,
+} from "ai";
+import { model } from "./model";
 import { z } from "zod";
+import { searchSerper } from "./serper";
+import { bulkCrawlWebsites } from "./server/scraper";
 
-export const streamFromDeepSearch = (opts: {
-  messages: Message[];
-  onFinish: Parameters<typeof streamText>[0]["onFinish"];
+export const streamFromDeepSearch = async (opts: {
+  messages: UIMessage[];
   telemetry: TelemetrySettings;
-}) =>
-  streamText({
+}) => {
+  const modelMessages = await convertToModelMessages(opts.messages);
+
+  return streamText({
     model,
-    messages: opts.messages,
-    maxSteps: 10,
+    messages: modelMessages,
+    stopWhen: stepCountIs(10),
     system: `You are a helpful AI assistant with access to real-time web search capabilities. The current date and time is ${new Date().toLocaleString()}. When answering questions:
 
 1. Always search the web for up-to-date information when relevant
@@ -36,8 +44,9 @@ Remember to:
 - Prioritize official sources and authoritative websites
 - Use the full content to provide comprehensive answers`,
     tools: {
-      searchWeb: {
-        parameters: z.object({
+      searchWeb: tool({
+        description: "Search the web for information",
+        inputSchema: z.object({
           query: z.string().describe("The query to search the web for"),
         }),
         execute: async ({ query }, { abortSignal }) => {
@@ -45,7 +54,6 @@ Remember to:
             { q: query, num: 10 },
             abortSignal,
           );
-
           return results.organic.map((result) => ({
             title: result.title,
             link: result.link,
@@ -53,12 +61,13 @@ Remember to:
             date: result.date,
           }));
         },
-      },
-      scrapePages: {
-        parameters: z.object({
+      }),
+      scrapePages: tool({
+        description: "Scrape full page content from a list of URLs",
+        inputSchema: z.object({
           urls: z.array(z.string()).describe("The URLs to scrape"),
         }),
-        execute: async ({ urls }, { abortSignal }) => {
+        execute: async ({ urls }) => {
           const results = await bulkCrawlWebsites({ urls });
 
           if (!results.success) {
@@ -80,24 +89,17 @@ Remember to:
             })),
           };
         },
-      },
+      }),
     },
-    onFinish: opts.onFinish,
     experimental_telemetry: opts.telemetry,
   });
+};
 
-export async function askDeepSearch(messages: Message[]) {
-  const result = streamFromDeepSearch({
+export async function askDeepSearch(messages: UIMessage[]) {
+  const result = await streamFromDeepSearch({
     messages,
-    onFinish: () => {}, // just a stub
-    telemetry: {
-      isEnabled: false,
-    },
+    telemetry: { isEnabled: false },
   });
-
-  // Consume the stream - without this,
-  // the stream will never finish
   await result.consumeStream();
-
   return await result.text;
 }

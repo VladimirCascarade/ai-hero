@@ -1,19 +1,18 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
-import { isNewChatCreated } from "~/utils";
-import type { Message } from "ai";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId: string | undefined;
-  initialMessages: Message[];
+  initialMessages: UIMessage[];
 }
 
 export const ChatPage = ({
@@ -24,26 +23,26 @@ export const ChatPage = ({
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
-  const {
-    messages,
-    input,
-    handleInputChange,
-    handleSubmit: originalHandleSubmit,
-    isLoading,
-    data,
-  } = useChat({
-    body: {
-      chatId,
+  const { messages, status, sendMessage } = useChat({
+    transport: new DefaultChatTransport({
+      body: { chatId },
+    }),
+    messages: initialMessages,
+    onData: (dataPart) => {
+      if (
+        dataPart.type === "data-new-chat-created" &&
+        typeof dataPart.data === "object" &&
+        dataPart.data !== null &&
+        "chatId" in dataPart.data &&
+        typeof dataPart.data.chatId === "string"
+      ) {
+        router.push(`?id=${dataPart.data.chatId}`);
+      }
     },
-    initialMessages,
   });
 
-  useEffect(() => {
-    const lastDataItem = data?.[data.length - 1];
-    if (lastDataItem && isNewChatCreated(lastDataItem)) {
-      router.push(`?id=${lastDataItem.chatId}`);
-    }
-  }, [data, router]);
+  const [input, setInput] = useState("");
+  const isLoading = status === "streaming" || status === "submitted";
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -53,7 +52,8 @@ export const ChatPage = ({
       return;
     }
 
-    originalHandleSubmit(e);
+    sendMessage({ text: input });
+    setInput("");
   };
 
   return (
@@ -64,16 +64,14 @@ export const ChatPage = ({
           role="log"
           aria-label="Chat messages"
         >
-          {messages.map((message, index) => {
-            return (
-              <ChatMessage
-                key={index}
-                parts={message.parts ?? []}
-                role={message.role}
-                userName={userName}
-              />
-            );
-          })}
+          {messages.map((message, index) => (
+            <ChatMessage
+              key={index}
+              parts={message.parts ?? []}
+              role={message.role}
+              userName={userName}
+            />
+          ))}
         </div>
 
         <div className="border-t border-gray-700">
@@ -81,7 +79,7 @@ export const ChatPage = ({
             <div className="flex gap-2">
               <input
                 value={input}
-                onChange={handleInputChange}
+                onChange={(e) => setInput(e.target.value)}
                 placeholder="Say something..."
                 autoFocus
                 aria-label="Chat input"

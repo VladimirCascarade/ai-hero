@@ -1,20 +1,15 @@
 import ReactMarkdown, { type Components } from "react-markdown";
-import type { Message } from "ai";
 import { useState } from "react";
 import { SearchIcon, LinkIcon } from "lucide-react";
-import type { OurMessageAnnotation } from "~/types";
-
-type MessagePart = NonNullable<Message["parts"]>[number];
+import type { OurMessage } from "~/types";
 
 interface ChatMessageProps {
-  parts: MessagePart[];
+  parts: OurMessage["parts"];
   role: string;
   userName: string;
-  annotations: OurMessageAnnotation[];
 }
 
 const components: Components = {
-  // Override default elements with custom styling
   p: ({ children }) => <p className="mb-4 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="mb-4 list-disc pl-4">{children}</ul>,
   ol: ({ children }) => <ol className="mb-4 list-decimal pl-4">{children}</ol>,
@@ -45,56 +40,20 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-const ToolInvocation = ({
-  part,
-}: {
-  part: Extract<MessagePart, { type: "tool-invocation" }>;
-}) => {
-  const { toolInvocation } = part;
-  const { state, toolName, args } = toolInvocation;
-
-  return (
-    <div className="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-400">Tool:</span>
-        <span className="text-sm text-gray-300">{toolName}</span>
-      </div>
-      <div className="mb-2">
-        <span className="text-sm font-medium text-gray-400">State:</span>
-        <span className="ml-2 text-sm text-gray-300">{state}</span>
-      </div>
-      <div className="mb-2">
-        <span className="text-sm font-medium text-gray-400">Arguments:</span>
-        <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-          {JSON.stringify(args, null, 2)}
-        </pre>
-      </div>
-      {toolInvocation.state === "result" && toolInvocation.result && (
-        <div>
-          <span className="text-sm font-medium text-gray-400">Result:</span>
-          <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-            {JSON.stringify(toolInvocation.result, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const ReasoningSteps = ({
-  annotations,
-}: {
-  annotations: OurMessageAnnotation[];
-}) => {
+const ReasoningSteps = ({ parts }: { parts: OurMessage["parts"] }) => {
   const [openStep, setOpenStep] = useState<number | null>(null);
 
-  if (annotations.length === 0) return null;
+  const actionParts = parts.filter((part) => part.type === "data-new-action");
+
+  if (actionParts.length === 0) return null;
 
   return (
     <div className="mb-4 w-full">
       <ul className="space-y-1">
-        {annotations.map((annotation, index) => {
+        {actionParts.map((part, index) => {
           const isOpen = openStep === index;
+          if (part.type !== "data-new-action") return null;
+
           return (
             <li key={index} className="relative">
               <button
@@ -114,25 +73,25 @@ const ReasoningSteps = ({
                 >
                   {index + 1}
                 </span>
-                {annotation.action.title}
+                {part.data.title}
               </button>
               <div className={`${isOpen ? "mt-1" : "hidden"}`}>
                 {isOpen && (
                   <div className="px-2 py-1">
                     <div className="text-sm italic text-gray-400">
-                      <Markdown>{annotation.action.reasoning}</Markdown>
+                      <Markdown>{part.data.reasoning}</Markdown>
                     </div>
-                    {annotation.action.type === "search" && (
+                    {part.data.type === "search" && (
                       <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
                         <SearchIcon className="size-4" />
-                        <span>{annotation.action.query}</span>
+                        <span>{part.data.query}</span>
                       </div>
                     )}
-                    {annotation.action.type === "scrape" && (
+                    {part.data.type === "scrape" && (
                       <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
                         <LinkIcon className="size-4" />
                         <span>
-                          {annotation.action.urls
+                          {part.data.urls
                             ?.map((url) => new URL(url).hostname)
                             ?.join(", ")}
                         </span>
@@ -149,12 +108,7 @@ const ReasoningSteps = ({
   );
 };
 
-export const ChatMessage = ({
-  parts,
-  role,
-  userName,
-  annotations,
-}: ChatMessageProps) => {
+export const ChatMessage = ({ role, userName, parts }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   return (
@@ -168,15 +122,12 @@ export const ChatMessage = ({
           {isAI ? "AI" : userName}
         </p>
 
-        {isAI && <ReasoningSteps annotations={annotations} />}
+        {isAI && <ReasoningSteps parts={parts} />}
 
         <div className="prose prose-invert max-w-none">
           {parts.map((part, index) => {
             if (part.type === "text") {
               return <Markdown key={index}>{part.text}</Markdown>;
-            }
-            if (part.type === "tool-invocation") {
-              return <ToolInvocation key={index} part={part} />;
             }
             return null;
           })}

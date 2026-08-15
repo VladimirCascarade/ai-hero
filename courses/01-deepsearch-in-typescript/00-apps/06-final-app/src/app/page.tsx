@@ -4,8 +4,7 @@ import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
 import { getChats, getChat } from "~/server/db/queries";
-import type { Message } from "ai";
-import type { OurMessageAnnotation } from "~/types.ts";
+import type { OurMessage } from "~/types.ts";
 
 export default async function HomePage({
   searchParams,
@@ -34,9 +33,7 @@ export default async function HomePage({
     activeChat?.messages.map((msg) => ({
       id: msg.id,
       role: msg.role as "user" | "assistant",
-      parts: msg.content as Message["parts"],
-      content: "",
-      annotations: (msg.annotations ?? []) as OurMessageAnnotation[],
+      parts: msg.parts as OurMessage["parts"],
     })) ?? [];
 
   return (

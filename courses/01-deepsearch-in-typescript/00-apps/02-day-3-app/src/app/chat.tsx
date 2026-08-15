@@ -1,19 +1,20 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
-import { isNewChatCreated } from "~/utils";
-import type { Message } from "ai";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
-  chatId: string | undefined;
-  initialMessages: Message[];
+  chatId: string;
+  initialMessages: UIMessage[];
+  isNewChat: boolean;
 }
 
 export const ChatPage = ({
@@ -21,29 +22,33 @@ export const ChatPage = ({
   isAuthenticated,
   chatId,
   initialMessages,
+  isNewChat,
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
-  const {
-    messages,
-    input,
-    handleInputChange,
-    handleSubmit: originalHandleSubmit,
-    isLoading,
-    data,
-  } = useChat({
-    body: {
-      chatId,
+  const { messages, status, sendMessage } = useChat({
+    transport: new DefaultChatTransport({
+      body: {
+        chatId,
+        isNewChat,
+      },
+    }),
+    messages: initialMessages,
+    onData: (dataPart) => {
+      if (
+        dataPart.type === "data-new-chat-created" &&
+        typeof dataPart.data === "object" &&
+        dataPart.data !== null &&
+        "chatId" in dataPart.data &&
+        typeof dataPart.data.chatId === "string"
+      ) {
+        router.push(`?id=${dataPart.data.chatId}`);
+      }
     },
-    initialMessages,
   });
 
-  useEffect(() => {
-    const lastDataItem = data?.[data.length - 1];
-    if (lastDataItem && isNewChatCreated(lastDataItem)) {
-      router.push(`?id=${lastDataItem.chatId}`);
-    }
-  }, [data, router]);
+  const [input, setInput] = useState("");
+  const isLoading = status === "streaming" || status === "submitted";
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -53,35 +58,37 @@ export const ChatPage = ({
       return;
     }
 
-    originalHandleSubmit(e);
+    sendMessage({ text: input });
+    setInput("");
   };
 
   return (
     <>
       <div className="flex flex-1 flex-col">
-        <div
-          className="mx-auto w-full max-w-[65ch] flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500"
-          role="log"
-          aria-label="Chat messages"
+        <StickToBottom
+          className="mx-auto w-full max-w-[65ch] flex-1 overflow-auto [&>div]:scrollbar-thin [&>div]:scrollbar-track-gray-200 [&>div]:scrollbar-thumb-gray-600"
+          resize="instant"
+          initial="instant"
         >
-          {messages.map((message, index) => {
-            return (
-              <ChatMessage
-                key={index}
-                parts={message.parts ?? []}
-                role={message.role}
-                userName={userName}
-              />
-            );
-          })}
-        </div>
-
+          <StickToBottom.Content>
+            {messages.map((message, index) => {
+              return (
+                <ChatMessage
+                  key={index}
+                  parts={message.parts ?? []}
+                  role={message.role}
+                  userName={userName}
+                />
+              );
+            })}
+          </StickToBottom.Content>
+        </StickToBottom>
         <div className="border-t border-gray-700">
           <form onSubmit={handleSubmit} className="mx-auto max-w-[65ch] p-4">
             <div className="flex gap-2">
               <input
                 value={input}
-                onChange={handleInputChange}
+                onChange={(e) => setInput(e.target.value)}
                 placeholder="Say something..."
                 autoFocus
                 aria-label="Chat input"

@@ -1,4 +1,4 @@
-import { streamText, type StreamTextResult } from "ai";
+import { streamText } from "ai";
 import { model } from "~/model";
 import { SystemContext } from "./system-context.ts";
 
@@ -8,7 +8,7 @@ export function answerQuestion(
     isFinal?: boolean;
     langfuseTraceId?: string;
   },
-): StreamTextResult<{}, string> {
+) {
   const { isFinal = false, langfuseTraceId } = opts;
 
   const result = streamText({

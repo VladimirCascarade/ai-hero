@@ -1,4 +1,4 @@
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 import { evalite } from "evalite";
 import { askDeepSearch } from "~/deep-search";
 import { Factuality } from "~/factuality-scorer";
@@ -33,11 +33,11 @@ Development and Build Performance: Improved build times and Faster Fast Refresh.
     ];
   },
   task: async (input) => {
-    const messages: Message[] = [
+    const messages: UIMessage[] = [
       {
         id: "1",
         role: "user",
-        content: input,
+        parts: [{ type: "text", text: input }],
       },
     ];
     return askDeepSearch(messages);

@@ -1,4 +1,4 @@
-import { streamText, type StreamTextResult } from "ai";
+import { streamText } from "ai";
 import { model } from "~/model";
 import { SystemContext } from "./system-context";
 
@@ -7,10 +7,9 @@ export function answerQuestion(
   opts: {
     isFinal?: boolean;
     langfuseTraceId?: string;
-    onFinish: Parameters<typeof streamText>[0]["onFinish"];
   },
-): StreamTextResult<{}, string> {
-  const { isFinal = false, langfuseTraceId, onFinish } = opts;
+) {
+  const { isFinal = false, langfuseTraceId } = opts;
 
   return streamText({
     model,
@@ -41,6 +40,5 @@ ${ctx.getScrapeHistory()}`,
           },
         }
       : undefined,
-    onFinish,
   });
 }

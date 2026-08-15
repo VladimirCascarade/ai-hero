@@ -1,29 +1,24 @@
-import { streamText, type Message, type StreamTextResult } from "ai";
+import { type UIMessage, type UIMessageStreamWriter } from "ai";
 import { runAgentLoop } from "./run-agent-loop";
-import type { OurMessageAnnotation } from "./types";
+import type { OurMessage } from "./types";
 
 export const streamFromDeepSearch = async (opts: {
-  messages: Message[];
-  onFinish: Parameters<typeof streamText>[0]["onFinish"];
+  messages: UIMessage[];
   langfuseTraceId?: string;
-  writeMessageAnnotation?: (annotation: OurMessageAnnotation) => void;
-}): Promise<StreamTextResult<{}, string>> => {
+  writeMessagePart?: UIMessageStreamWriter<OurMessage>["write"];
+}) => {
   return runAgentLoop(opts.messages, {
     langfuseTraceId: opts.langfuseTraceId,
-    writeMessageAnnotation: opts.writeMessageAnnotation,
-    onFinish: opts.onFinish,
+    writeMessagePart: opts.writeMessagePart,
   });
 };
 
-export async function askDeepSearch(messages: Message[]) {
+export async function askDeepSearch(messages: UIMessage[]) {
   const result = await streamFromDeepSearch({
     messages,
-    onFinish: () => {}, // just a stub
     langfuseTraceId: undefined,
   });
 
-  // Consume the stream - without this,
-  // the stream will never finish
   await result.consumeStream();
 
   return await result.text;

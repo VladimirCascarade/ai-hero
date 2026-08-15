@@ -1,0 +1,7 @@
+{
+  "name": "deepsearch-00-apps",
+  "private": true,
+  "scripts": {
+    "sync-env": "node shared/sync-env.mjs"
+  }
+}

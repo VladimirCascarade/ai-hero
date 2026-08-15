@@ -1,16 +1,12 @@
 import ReactMarkdown, { type Components } from "react-markdown";
-import type { Message } from "ai";
 import { useState } from "react";
-import { SearchIcon, LinkIcon } from "lucide-react";
-import type { OurMessageAnnotation } from "~/types";
-
-type MessagePart = NonNullable<Message["parts"]>[number];
+import { SearchIcon } from "lucide-react";
+import type { OurMessage } from "~/types";
 
 interface ChatMessageProps {
-  parts: MessagePart[];
+  parts: OurMessage["parts"];
   role: string;
   userName: string;
-  annotations: OurMessageAnnotation[];
 }
 
 type Source = {
@@ -52,42 +48,6 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-const ToolInvocation = ({
-  part,
-}: {
-  part: Extract<MessagePart, { type: "tool-invocation" }>;
-}) => {
-  const { toolInvocation } = part;
-  const { state, toolName, args } = toolInvocation;
-
-  return (
-    <div className="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-400">Tool:</span>
-        <span className="text-sm text-gray-300">{toolName}</span>
-      </div>
-      <div className="mb-2">
-        <span className="text-sm font-medium text-gray-400">State:</span>
-        <span className="ml-2 text-sm text-gray-300">{state}</span>
-      </div>
-      <div className="mb-2">
-        <span className="text-sm font-medium text-gray-400">Arguments:</span>
-        <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-          {JSON.stringify(args, null, 2)}
-        </pre>
-      </div>
-      {toolInvocation.state === "result" && toolInvocation.result && (
-        <div>
-          <span className="text-sm font-medium text-gray-400">Result:</span>
-          <pre className="mt-1 overflow-x-auto rounded bg-gray-900 p-2 text-sm text-gray-300">
-            {JSON.stringify(toolInvocation.result, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const Sources = ({ sources }: { sources: Source[] }) => {
   return (
     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -118,19 +78,15 @@ const Sources = ({ sources }: { sources: Source[] }) => {
   );
 };
 
-const ReasoningSteps = ({
-  annotations,
-}: {
-  annotations: OurMessageAnnotation[];
-}) => {
+const ReasoningSteps = ({ parts }: { parts: OurMessage["parts"] }) => {
   const [openStep, setOpenStep] = useState<number | null>(null);
 
-  if (annotations.length === 0) return null;
+  if (parts.length === 0) return null;
 
   return (
     <div className="mb-4 w-full">
       <ul className="space-y-1">
-        {annotations.map((annotation, index) => {
+        {parts.map((part, index) => {
           const isOpen = openStep === index;
           return (
             <li key={index} className="relative">
@@ -151,19 +107,17 @@ const ReasoningSteps = ({
                 >
                   {index + 1}
                 </span>
-                {annotation.type === "NEW_ACTION"
-                  ? annotation.action.title
-                  : "Sources"}
+                {part.type === "data-new-action" ? part.data.title : "Sources"}
               </button>
               <div className={`${isOpen ? "mt-1" : "hidden"}`}>
                 {isOpen && (
                   <div className="px-2 py-1">
-                    {annotation.type === "NEW_ACTION" ? (
+                    {part.type === "data-new-action" ? (
                       <>
                         <div className="text-sm italic text-gray-400">
-                          <Markdown>{annotation.action.reasoning}</Markdown>
+                          <Markdown>{part.data.reasoning}</Markdown>
                         </div>
-                        {annotation.action.type === "continue" && (
+                        {part.data.type === "continue" && (
                           <div className="mt-2 flex flex-col gap-2 text-sm text-gray-400">
                             <div className="flex items-center gap-2">
                               <SearchIcon className="size-4" />
@@ -173,19 +127,13 @@ const ReasoningSteps = ({
                               <div className="font-medium text-gray-300">
                                 Feedback:
                               </div>
-                              <Markdown>{annotation.action.feedback!}</Markdown>
+                              <Markdown>{part.data.feedback!}</Markdown>
                             </div>
                           </div>
                         )}
                       </>
-                    ) : annotation.type === "SOURCES" ? (
-                      <Sources
-                        sources={
-                          annotation.type === "SOURCES"
-                            ? annotation.sources
-                            : []
-                        }
-                      />
+                    ) : part.type === "data-sources" ? (
+                      <Sources sources={part.data} />
                     ) : null}
                   </div>
                 )}
@@ -198,17 +146,12 @@ const ReasoningSteps = ({
   );
 };
 
-export const ChatMessage = ({
-  parts,
-  role,
-  userName,
-  annotations,
-}: ChatMessageProps) => {
+export const ChatMessage = ({ role, userName, parts }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   // Find the latest USAGE annotation (if any)
-  const usageAnnotation = isAI
-    ? annotations.findLast((a) => a.type === "USAGE")
+  const usagePart = isAI
+    ? parts.findLast((a) => a.type === "data-usage")
     : undefined;
 
   return (
@@ -222,11 +165,11 @@ export const ChatMessage = ({
           {isAI ? "AI" : userName}
         </p>
 
-        {isAI && <ReasoningSteps annotations={annotations} />}
+        {isAI && <ReasoningSteps parts={parts} />}
 
-        {isAI && usageAnnotation && (
+        {isAI && usagePart && (
           <div className="mb-2 text-xs text-gray-400">
-            Tokens used: {usageAnnotation.totalTokens}
+            Tokens used: {usagePart.data.totalTokens}
           </div>
         )}
 
@@ -234,9 +177,6 @@ export const ChatMessage = ({
           {parts.map((part, index) => {
             if (part.type === "text") {
               return <Markdown key={index}>{part.text}</Markdown>;
-            }
-            if (part.type === "tool-invocation") {
-              return <ToolInvocation key={index} part={part} />;
             }
             return null;
           })}
