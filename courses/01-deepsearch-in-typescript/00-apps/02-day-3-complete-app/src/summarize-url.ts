@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, type LanguageModelUsage } from "ai";
 import {
   langfuseTelemetry,
   type LangfuseTelemetryOpts,
@@ -24,21 +24,8 @@ const buildPrompt = ({
   scrapedContent,
   searchMetadata,
   query,
-}: SummarizeURLInput) => `You are a research extraction specialist. Given a research topic and raw web content, create a thoroughly detailed synthesis as a cohesive narrative that flows naturally between key concepts.
-
-Research Topic: ${query}
-
-Source Title: ${searchMetadata.title}
-Source URL: ${searchMetadata.url}
-Source Date: ${searchMetadata.date}
-
-Conversation History (for context):
-${conversation}
-
-Raw Web Content:
-<content>
-${scrapedContent}
-</content>
+}: SummarizeURLInput) => ({
+  system: `You are a research extraction specialist. Given a research topic and raw web content, create a thoroughly detailed synthesis as a cohesive narrative that flows naturally between key concepts.
 
 Extract the most valuable information related to the research topic, including relevant facts, statistics, methodologies, claims, and contextual information. Preserve technical terminology and domain-specific language from the source material.
 
@@ -52,23 +39,44 @@ Important guidelines:
 - Create a cohesive narrative rather than disconnected bullet points or lists
 - Use paragraph breaks only when transitioning between major themes
 
-Critical Reminder: If content lacks a specific aspect of the research topic, clearly state that in the synthesis, and you should NEVER make up information and NEVER rely on external knowledge.`;
+Critical Reminder: If content lacks a specific aspect of the research topic, clearly state that in the synthesis, and you should NEVER make up information and NEVER rely on external knowledge.`,
+  prompt: `Create a synthesis of the raw web content below as it relates to the research topic.
+
+---
+
+Research Topic: ${query}
+
+Source Title: ${searchMetadata.title}
+Source URL: ${searchMetadata.url}
+Source Date: ${searchMetadata.date}
+
+Conversation History (for context):
+${conversation}
+
+Raw Web Content:
+<content>
+${scrapedContent}
+</content>`,
+});
 
 export const summarizeURL = async (
   input: SummarizeURLInput,
   telemetry?: LangfuseTelemetryOpts,
-): Promise<string> => {
+): Promise<{ text: string; usage: LanguageModelUsage | null }> => {
   const key = `summarizeURL:${JSON.stringify([input])}`;
   const cachedResult = await redis.get(key);
 
   if (cachedResult) {
     console.log(`Cache hit for ${key}`);
-    return JSON.parse(cachedResult) as string;
+    return {
+      text: JSON.parse(cachedResult) as string,
+      usage: null,
+    };
   }
 
-  const { text } = await generateText({
+  const { text, usage } = await generateText({
     model: summarizationModel,
-    prompt: buildPrompt(input),
+    ...buildPrompt(input),
     experimental_telemetry: langfuseTelemetry("summarize-url", {
       ...telemetry,
       metadata: {
@@ -80,5 +88,5 @@ export const summarizeURL = async (
   });
 
   await redis.set(key, JSON.stringify(text), "EX", CACHE_EXPIRY_SECONDS);
-  return text;
+  return { text, usage };
 };

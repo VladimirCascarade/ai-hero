@@ -1,14 +1,24 @@
-import type { UIMessage, UIMessageStreamWriter } from "ai";
+import type { UIMessageStreamWriter } from "ai";
 import { streamText } from "ai";
 import { answerQuestion } from "~/answer-question";
 import { env } from "~/env";
+import {
+  checkIsSafe,
+  CLARIFICATION_SYSTEM,
+  DEFAULT_REFUSAL_MESSAGE,
+} from "~/guardrails";
 import { getNextAction } from "~/get-next-action";
+import { guardrailModel } from "~/model";
 import { queryRewriter } from "~/query-rewriter";
 import { SystemContext, type SearchHistoryEntry } from "~/system-context";
 import { summarizeURL } from "~/summarize-url";
-import { searchTavily } from "~/tavily";
-import type { LangfuseTelemetryOpts } from "~/langfuse-telemetry";
+import {
+  langfuseTelemetry,
+  type LangfuseTelemetryOpts,
+} from "~/langfuse-telemetry";
+import { toUsageDataPart } from "~/token-usage";
 import type { OurMessage, Source } from "~/types";
+import { getSearchFn, type WebSearchResult } from "~/web-search";
 
 const faviconFor = (url: string): string | undefined => {
   try {
@@ -21,13 +31,7 @@ const faviconFor = (url: string): string | undefined => {
 const summarizeSearchResults = async (
   ctx: SystemContext,
   query: string,
-  results: Array<{
-    date: string;
-    title: string;
-    url: string;
-    snippet: string;
-    scrapedContent: string;
-  }>,
+  results: WebSearchResult[],
   telemetry?: LangfuseTelemetryOpts,
 ) => {
   const summarizedResults = await Promise.all(
@@ -39,7 +43,7 @@ const summarizeSearchResults = async (
         };
       }
 
-      const summary = await summarizeURL(
+      const { text, usage } = await summarizeURL(
         {
           conversation: ctx.getMessageHistory(),
           scrapedContent: result.scrapedContent,
@@ -53,7 +57,11 @@ const summarizeSearchResults = async (
         telemetry,
       );
 
-      return { ...result, summary };
+      if (usage) {
+        ctx.reportUsage("summarize-url", usage);
+      }
+
+      return { ...result, summary: text };
     }),
   );
 
@@ -62,14 +70,104 @@ const summarizeSearchResults = async (
 
 type AgentStreamResult = ReturnType<typeof streamText>;
 
+export type AgentLoopResult = {
+  result: AgentStreamResult;
+};
+
+const attachStreamUsage = (
+  ctx: SystemContext,
+  result: AgentStreamResult,
+  descriptor: string,
+  onReported?: () => void,
+) => {
+  void result.usage.then((usage) => {
+    if (usage) {
+      ctx.reportUsage(descriptor, usage);
+      onReported?.();
+    }
+  });
+};
+
 export async function runAgentLoop(
-  messages: UIMessage[],
+  ctx: SystemContext,
   opts: {
     telemetry?: LangfuseTelemetryOpts;
     writeMessagePart: UIMessageStreamWriter<OurMessage>["write"];
   },
-): Promise<AgentStreamResult> {
-  const ctx = new SystemContext(messages);
+): Promise<AgentLoopResult> {
+  const search = getSearchFn();
+  const usageDataPartId = crypto.randomUUID();
+
+  const emitUsage = () => {
+    const data = toUsageDataPart(ctx.getTotalTokens());
+    if (data.totalTokens <= 0) {
+      return;
+    }
+
+    opts.writeMessagePart({
+      id: usageDataPartId,
+      type: "data-usage",
+      data,
+    });
+  };
+
+  const answerQuestionWithUsage = (answerOpts: {
+    isFinal?: boolean;
+    telemetry?: LangfuseTelemetryOpts;
+  }) => {
+    emitUsage();
+    return answerQuestion(ctx, {
+      ...answerOpts,
+      onUsageReported: () => emitUsage(),
+    });
+  };
+
+  const guardrailResult = await checkIsSafe(ctx, opts.telemetry);
+  if (guardrailResult.classification === "refuse") {
+    const refusalMessage =
+      guardrailResult.reason ?? DEFAULT_REFUSAL_MESSAGE;
+
+    emitUsage();
+
+    const result = streamText({
+      model: guardrailModel,
+      system:
+        "Output the following message to the user verbatim. Do not add any other text.",
+      prompt: refusalMessage,
+      experimental_telemetry: langfuseTelemetry(
+        "guardrail-refusal",
+        opts.telemetry,
+      ),
+    });
+
+    attachStreamUsage(ctx, result, "guardrail-refusal", () => emitUsage());
+
+    return { result };
+  }
+
+  if (guardrailResult.classification === "clarify" && !ctx.shouldSkipClarification()) {
+    emitUsage();
+
+    const result = streamText({
+      model: guardrailModel,
+      system: CLARIFICATION_SYSTEM,
+      prompt: `Message history:
+${ctx.getMessageHistory()}
+
+Why clarification is needed: ${guardrailResult.reason}`,
+      experimental_telemetry: langfuseTelemetry(
+        "guardrail-clarification",
+        opts.telemetry,
+      ),
+    });
+
+    attachStreamUsage(ctx, result, "guardrail-clarification", () =>
+      emitUsage(),
+    );
+
+    return { result };
+  }
+
   const maxDurationMs = env.MAX_DURATION_SECONDS * 1000;
   const deadline = Date.now() + maxDurationMs * 0.8;
   const isNearDeadline = () => Date.now() >= deadline;
@@ -84,7 +182,7 @@ export async function runAgentLoop(
         type: "answer",
       },
     });
-    return answerQuestion(ctx, { isFinal: true, ...opts });
+    return answerQuestionWithUsage({ isFinal: true, telemetry: opts.telemetry });
   };
 
   const answerAfterSteps = () => {
@@ -93,16 +191,18 @@ export async function runAgentLoop(
       data: {
         title: "Answering the question",
         reasoning:
-          "I've completed my research steps and will now provide an answer based on what I've found.",
+          ctx.getStopReason() === "budget"
+            ? "The session token budget has been reached — answering with the research collected so far."
+            : "I've completed my research steps and will now provide an answer based on what I've found.",
         type: "answer",
       },
     });
-    return answerQuestion(ctx, { isFinal: true, ...opts });
+    return answerQuestionWithUsage({ isFinal: true, telemetry: opts.telemetry });
   };
 
   while (!ctx.shouldStop()) {
     if (isNearDeadline()) {
-      return answerWithTimeout();
+      return { result: answerWithTimeout() };
     }
 
     const { plan, queries } = await queryRewriter(ctx, opts.telemetry);
@@ -115,26 +215,18 @@ export async function runAgentLoop(
     const cap = env.SCRAPE_URLS_COUNT;
     const seenUrls = new Set<string>();
     const sources: Source[] = [];
+    const allResults: Array<{ query: string; results: WebSearchResult[] }> =
+      [];
     let collected = 0;
 
     for (const query of queries) {
       if (collected >= cap || isNearDeadline()) break;
 
-      const response = await searchTavily({
-        query,
-        num: cap - collected,
-      });
+      const rawResults = await search(query, cap - collected);
 
-      const results = response.results
+      const results = rawResults
         .filter((result) => !seenUrls.has(result.url))
-        .slice(0, cap - collected)
-        .map((result) => ({
-          date: new Date().toISOString(),
-          title: result.title,
-          url: result.url,
-          snippet: result.content,
-          scrapedContent: result.rawContent ?? result.content ?? "",
-        }));
+        .slice(0, cap - collected);
 
       if (results.length === 0) continue;
 
@@ -149,7 +241,7 @@ export async function runAgentLoop(
       }
 
       collected += results.length;
-      await summarizeSearchResults(ctx, query, results, opts.telemetry);
+      allResults.push({ query, results });
     }
 
     if (sources.length > 0) {
@@ -159,8 +251,19 @@ export async function runAgentLoop(
       });
     }
 
+    for (const { query, results } of allResults) {
+      if (isNearDeadline()) break;
+      await summarizeSearchResults(ctx, query, results, opts.telemetry);
+    }
+
+    emitUsage();
+
+    if (ctx.getStopReason() === "budget") {
+      return { result: answerAfterSteps() };
+    }
+
     if (isNearDeadline()) {
-      return answerWithTimeout();
+      return { result: answerWithTimeout() };
     }
 
     const nextAction = await getNextAction(ctx, opts.telemetry);
@@ -174,12 +277,23 @@ export async function runAgentLoop(
       data: nextAction,
     });
 
+    emitUsage();
+
     if (nextAction.type === "answer") {
-      return answerQuestion(ctx, { isFinal: false, ...opts });
+      return {
+        result: answerQuestionWithUsage({
+          isFinal: false,
+          telemetry: opts.telemetry,
+        }),
+      };
+    }
+
+    if (ctx.getStopReason() === "budget") {
+      return { result: answerAfterSteps() };
     }
 
     ctx.incrementStep();
   }
 
-  return answerAfterSteps();
-};
+  return { result: answerAfterSteps() };
+}

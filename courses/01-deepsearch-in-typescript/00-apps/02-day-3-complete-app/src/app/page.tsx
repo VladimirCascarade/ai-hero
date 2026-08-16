@@ -1,5 +1,6 @@
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
+import { env } from "~/env";
 import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
@@ -93,6 +94,7 @@ export default async function HomePage({
         chatId={chatId}
         isNewChat={isNewChat}
         initialMessages={initialMessages}
+        sessionTokenBudget={env.SESSION_TOKEN_BUDGET}
       />
     </div>
   );

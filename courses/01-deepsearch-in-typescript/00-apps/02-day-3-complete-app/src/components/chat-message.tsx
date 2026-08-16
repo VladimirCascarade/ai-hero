@@ -1,6 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import { useState } from "react";
 import { SearchIcon } from "lucide-react";
+import remarkGfm from "remark-gfm";
 import type { OurMessage, Source } from "~/types";
 
 interface ChatMessageProps {
@@ -37,7 +38,13 @@ const components: Components = {
 };
 
 const Markdown = ({ children }: { children: string }) => {
-  return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
+  return (
+    <div className="prose prose-invert max-w-none overflow-x-auto">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
 };
 
 const Sources = ({ sources }: { sources: Source[] }) => {
@@ -131,9 +138,7 @@ const ReasoningSteps = ({ parts }: { parts: OurMessage["parts"] }) => {
               <div className={`${isOpen ? "mt-1" : "hidden"}`}>
                 {isOpen && part.type === "data-research-plan" && (
                   <div className="px-2 py-1">
-                    <div className="text-sm italic text-gray-400">
-                      <Markdown>{part.data.plan}</Markdown>
-                    </div>
+                    <Markdown>{part.data.plan}</Markdown>
                     <ul className="mt-2 space-y-1">
                       {part.data.queries.map((query) => (
                         <li
@@ -154,15 +159,21 @@ const ReasoningSteps = ({ parts }: { parts: OurMessage["parts"] }) => {
                 )}
                 {isOpen && part.type === "data-new-action" && (
                   <div className="px-2 py-1">
-                    <div className="text-sm italic text-gray-400">
-                      <Markdown>{part.data.reasoning}</Markdown>
-                    </div>
-                    {part.data.type === "continue" && part.data.feedback && (
-                      <div className="mt-2 text-sm text-gray-400">
-                        <p className="font-medium text-gray-300">
-                          Feedback for next iteration:
-                        </p>
-                        <Markdown>{part.data.feedback}</Markdown>
+                    <Markdown>{part.data.reasoning}</Markdown>
+                    {part.data.type === "continue" && (
+                      <div className="mt-2 flex flex-col gap-2 text-sm text-gray-400">
+                        <div className="flex items-center gap-2">
+                          <SearchIcon className="size-4" />
+                          <span>Continuing search...</span>
+                        </div>
+                        {part.data.feedback && (
+                          <div className="mt-2 border-l-2 border-gray-700 pl-4">
+                            <div className="font-medium text-gray-300">
+                              Feedback:
+                            </div>
+                            <Markdown>{part.data.feedback}</Markdown>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -192,7 +203,7 @@ export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
 
         {isAI && <ReasoningSteps parts={parts} />}
 
-        <div className="prose prose-invert max-w-none">
+        <div>
           {parts.map((part, index) => {
             if (part?.type === "text" && part.text) {
               return <Markdown key={index}>{part.text}</Markdown>;

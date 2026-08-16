@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import { evalite } from "evalite";
 import { chatTitleDevData } from "./chat-title-data";
 import { generateChatTitle } from "~/generate-chat-title";
+import { SystemContext } from "~/system-context";
 import {
   NotTruncatedInput,
   TitleLength,
@@ -19,7 +20,8 @@ evalite("Chat Title", {
       },
     ];
 
-    return generateChatTitle(messages);
+    const ctx = new SystemContext(messages);
+    return generateChatTitle(messages, ctx);
   },
   scorers: [TitleLength, NotTruncatedInput, TitleRelevancy],
 });

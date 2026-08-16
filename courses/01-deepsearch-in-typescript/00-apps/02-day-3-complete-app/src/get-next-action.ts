@@ -1,8 +1,9 @@
-import { generateText, Output } from "ai";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { model } from "~/model";
 import { langfuseTelemetry, type LangfuseTelemetryOpts } from "~/langfuse-telemetry";
 import { SystemContext } from "~/system-context";
+import { parseStructuredOutput } from "~/utils";
 
 export const actionSchema = z.object({
   title: z
@@ -20,7 +21,7 @@ export const actionSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Required when type is 'continue'. Detailed feedback about what factual information is still missing from the search history.",
+      "Required only when type is 'continue'. Detailed feedback about what information is missing or what needs to be improved in the search. This will be used to guide the next search iteration.",
     ),
 });
 
@@ -30,54 +31,65 @@ export const getNextAction = async (
   context: SystemContext,
   telemetry?: LangfuseTelemetryOpts,
 ) => {
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: actionSchema }),
-    system: `You are a research evaluator. Decide whether the search history contains enough factual information to answer the user's question, or whether another search iteration is needed.
+  try {
+    const result = await generateText({
+      model,
+      output: Output.object({ schema: actionSchema }),
+      system: `You are a research query optimizer. Your task is to analyze search results against the original research goal and either decide to answer the question or to search for more information.
 
-Your job is NOT to write the answer. A separate answer step handles synthesis, formatting, step-by-step guides, and citations.
+Your job is NOT to write the answer. A separate answer step handles synthesis, formatting, and citations.
 
-Choose 'answer' when:
-- The search summaries contain the core facts needed to address the question
-- The remaining work is synthesis, explanation, or formatting — not more searching
-- You have relevant sources even if every edge case is not covered
-
-Choose 'continue' ONLY when:
-- Specific factual information is clearly missing from the search history
-- The summaries do not address a central part of the question
-- You can name concrete facts or sources that are still needed
-
-Do NOT choose 'continue' because:
-- You want to "synthesize" or "compile" information — that happens in the answer step
-- You want a "step-by-step guide" and the raw material is already in the summaries
-- You want more sources on the same topic when existing summaries already cover it
-- The answer might be incomplete on minor details — prefer 'answer' and let the answer step note uncertainty
+PROCESS:
+1. Identify ALL information explicitly requested in the original research goal
+2. Analyze what specific information has been successfully retrieved in the search results
+3. Identify ALL information gaps between what was requested and what was found
+4. For entity-specific gaps: Create targeted queries for each missing attribute of identified entities
+5. For general knowledge gaps: Create focused queries to find the missing conceptual information
 
 When providing feedback (required when type is 'continue'):
-- Name the specific missing facts, not vague goals like "synthesize" or "create a guide"
-- Explain why the current summaries cannot support even a partial answer
-
-The current date and time is: ${new Date().toLocaleString()}`,
-    prompt: `Message History:
-${context.getMessageHistory()}
-
-Based on this context, choose the next action:
-1. If specific factual gaps remain in the search history, use 'continue' with feedback naming what is missing
-2. If the summaries contain enough to answer (even partially), use 'answer'
+- Be specific about what information is missing
+- Explain why the current information is insufficient
+- Suggest what kind of information would be most helpful for the next search iteration
+- Consider both factual gaps and conceptual understanding gaps`,
+      prompt: `Based on this context, choose the next action:
+1. If you need more information, use 'continue' and provide detailed feedback about what's missing
+2. If you have enough information to answer the question, use 'answer'
 3. Never choose 'answer' if the search history is empty
-4. Prefer 'answer' over 'continue' when in doubt — do not search again for work the answer step can do
 
-Here is the search history:
-
-${context.getSearchHistory()}
+Remember:
+- Only use 'continue' if you need more information, and provide detailed feedback
+- Use 'answer' when you have enough information to provide a complete answer
+- Feedback is only required when choosing 'continue'
 
 Respond with ONLY a JSON object. No other text, no explanation, no markdown code fences.
 
 Examples:
 {"title":"Continuing research","reasoning":"No summaries mention platform-specific macOS audio APIs.","type":"continue","feedback":"Search history lacks macOS-specific implementation details for audio capture."}
-{"title":"Providing answer","reasoning":"Summaries cover setup steps and key APIs; the answer step can synthesize them.","type":"answer"}`,
-    experimental_telemetry: langfuseTelemetry("get-next-action", telemetry),
-  });
+{"title":"Providing answer","reasoning":"Summaries cover setup steps and key APIs; the answer step can synthesize them.","type":"answer"}
 
-  return result.output;
+---
+
+Message History:
+${context.getMessageHistory()}
+
+Search History:
+${context.getSearchHistory()}
+
+Current date and time: ${new Date().toLocaleString()}`,
+      experimental_telemetry: langfuseTelemetry("get-next-action", telemetry),
+    });
+
+    context.reportUsage("get-next-action", result.usage);
+
+    return result.output;
+  } catch (error) {
+    if (NoObjectGeneratedError.isInstance(error) && error.text) {
+      const recovered = parseStructuredOutput(actionSchema, error.text);
+      if (recovered) {
+        return recovered;
+      }
+    }
+
+    throw error;
+  }
 };

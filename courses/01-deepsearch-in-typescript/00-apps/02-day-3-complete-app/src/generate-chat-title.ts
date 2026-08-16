@@ -5,13 +5,15 @@ import {
   type LangfuseTelemetryOpts,
 } from "~/langfuse-telemetry";
 import { chatTitleModel } from "~/model";
+import type { SystemContext } from "~/system-context";
 import { messageToString } from "~/utils";
 
 export const generateChatTitle = async (
   messages: UIMessage[],
+  ctx: SystemContext,
   telemetry?: LangfuseTelemetryOpts,
 ) => {
-  const { text } = await generateText({
+  const result = await generateText({
     model: chatTitleModel,
     system: `You are a chat title generator.
 You will be given a chat history, and you will need to generate a title for the chat.
@@ -25,5 +27,7 @@ ${messages.map((message) => `${message.role}: ${messageToString(message)}`).join
     experimental_telemetry: langfuseTelemetry("generate-chat-title", telemetry),
   });
 
-  return text.trim().slice(0, 50);
+  ctx.reportUsage("generate-chat-title", result.usage);
+
+  return result.text.trim().slice(0, 50);
 };

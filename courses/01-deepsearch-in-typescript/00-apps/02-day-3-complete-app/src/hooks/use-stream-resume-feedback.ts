@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
+function isStreamDisconnectError(error: Error) {
+  return (
+    error.message.includes("input stream") ||
+    error.message.includes("Failed to fetch") ||
+    error.name === "AbortError"
+  );
+}
+
 export function useStreamResumeFeedback(
   resumeEnabled: boolean,
   status: string,
@@ -7,7 +15,6 @@ export function useStreamResumeFeedback(
   clearError: () => void,
 ) {
   const [attemptDone, setAttemptDone] = useState(!resumeEnabled);
-  const resumeFailed = useRef(false);
 
   useEffect(() => {
     if (attemptDone) return;
@@ -18,21 +25,16 @@ export function useStreamResumeFeedback(
     }
 
     if (status === "ready" || status === "error") {
-      resumeFailed.current = true;
       setAttemptDone(true);
-      clearError();
+
+      // Only clear spurious disconnect errors from the resume attempt itself.
+      if (error && isStreamDisconnectError(error)) {
+        clearError();
+      }
     }
-  }, [status, clearError, attemptDone]);
+  }, [status, clearError, attemptDone, error]);
 
-  useEffect(() => {
-    if (resumeFailed.current && attemptDone && status === "submitted") {
-      resumeFailed.current = false;
-    }
-  }, [status, attemptDone]);
+  const showError = Boolean(error) && attemptDone;
 
-  const isResuming = resumeEnabled && !attemptDone;
-  const showError =
-    Boolean(error) && !isResuming && !resumeFailed.current;
-
-  return { isResuming, showError };
+  return { attemptDone, showError };
 }

@@ -25,8 +25,9 @@ export const env = createEnv({
     OPENROUTER_MODEL_FAST: z
       .string()
       .default("google/gemma-4-26b-a4b-it:free"),
-    SERPER_API_KEY: z.string(),
-    TAVILY_API_KEY: z.string(),
+    SEARCH_PROVIDER: z.enum(["tavily", "serper"]).default("tavily"),
+    SERPER_API_KEY: z.string().optional(),
+    TAVILY_API_KEY: z.string().optional(),
     LANGFUSE_SECRET_KEY: z.string(),
     LANGFUSE_PUBLIC_KEY: z.string(),
     LANGFUSE_BASEURL: z.string().url(),
@@ -38,6 +39,7 @@ export const env = createEnv({
     SCRAPE_URLS_COUNT: z.coerce.number().default(4),
     MAX_AGENT_STEPS: z.coerce.number().default(3),
     MAX_DURATION_SECONDS: z.coerce.number().default(120),
+    SESSION_TOKEN_BUDGET: z.coerce.number().default(0),
   },
   client: {},
   runtimeEnv: {
@@ -50,6 +52,7 @@ export const env = createEnv({
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENROUTER_MODEL_HIGH: process.env.OPENROUTER_MODEL_HIGH,
     OPENROUTER_MODEL_FAST: process.env.OPENROUTER_MODEL_FAST,
+    SEARCH_PROVIDER: process.env.SEARCH_PROVIDER,
     SERPER_API_KEY: process.env.SERPER_API_KEY,
     TAVILY_API_KEY: process.env.TAVILY_API_KEY,
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
@@ -60,6 +63,7 @@ export const env = createEnv({
     SCRAPE_URLS_COUNT: process.env.SCRAPE_URLS_COUNT,
     MAX_AGENT_STEPS: process.env.MAX_AGENT_STEPS,
     MAX_DURATION_SECONDS: process.env.MAX_DURATION_SECONDS,
+    SESSION_TOKEN_BUDGET: process.env.SESSION_TOKEN_BUDGET,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

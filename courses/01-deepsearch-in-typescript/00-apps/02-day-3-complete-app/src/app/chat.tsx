@@ -7,9 +7,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
+import { ChatScrollArrows } from "~/components/chat-scroll-arrows";
 import { ErrorMessage } from "~/components/error-message";
 import { ResumeStreamMessage } from "~/components/resume-stream-message";
 import { SignInModal } from "~/components/sign-in-modal";
+import { TokenUsagePill } from "~/components/token-usage-pill";
 import { useReloadStreamMessage } from "~/hooks/use-reload-stream-message";
 import { useResumeOnMount } from "~/hooks/use-resume-on-mount";
 import { useStreamResumeFeedback } from "~/hooks/use-stream-resume-feedback";
@@ -21,6 +23,7 @@ interface ChatProps {
   chatId: string;
   initialMessages: OurMessage[];
   isNewChat: boolean;
+  sessionTokenBudget: number;
 }
 
 export const ChatPage = ({
@@ -29,6 +32,7 @@ export const ChatPage = ({
   chatId,
   initialMessages,
   isNewChat,
+  sessionTokenBudget,
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
@@ -66,7 +70,7 @@ export const ChatPage = ({
     },
   });
 
-  const { isResuming, showError } = useStreamResumeFeedback(
+  const { attemptDone: resumeAttemptDone, showError } = useStreamResumeFeedback(
     resume,
     status,
     error,
@@ -75,6 +79,8 @@ export const ChatPage = ({
   const { showResumeMessage, hideDisconnectError } = useReloadStreamMessage(
     error,
     status,
+    resume,
+    resumeAttemptDone,
   );
 
   const prevStatusRef = useRef(status);
@@ -94,11 +100,29 @@ export const ChatPage = ({
   const [input, setInput] = useState("");
   const isLoading = status === "streaming" || status === "submitted";
 
+  const latestUsage = useMemo(() => {
+    const usagePart = messages
+      .flatMap((message) =>
+        message.role === "assistant" ? (message.parts ?? []) : [],
+      )
+      .findLast((part) => part.type === "data-usage");
+
+    return usagePart?.type === "data-usage" ? usagePart.data : null;
+  }, [messages]);
+
+  const budgetExceeded = latestUsage?.budgetExceeded ?? false;
+  const tokensUsed = latestUsage?.totalTokens ?? 0;
+  const showTokenPill = sessionTokenBudget > 0;
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!isAuthenticated) {
       setShowSignInModal(true);
+      return;
+    }
+
+    if (budgetExceeded) {
       return;
     }
 
@@ -110,7 +134,7 @@ export const ChatPage = ({
     <>
       <div className="flex flex-1 flex-col">
         <StickToBottom
-          className="mx-auto w-full max-w-[65ch] flex-1 overflow-auto [&>div]:scrollbar-thin [&>div]:scrollbar-track-gray-200 [&>div]:scrollbar-thumb-gray-600"
+          className="relative mx-auto w-full max-w-[65ch] flex-1 overflow-auto scrollbar-none [&>div]:scrollbar-none"
           resize="instant"
           initial="instant"
         >
@@ -125,15 +149,28 @@ export const ChatPage = ({
                 />
               );
             })}
-            {(isResuming || showResumeMessage) && <ResumeStreamMessage />}
+            {showResumeMessage && <ResumeStreamMessage />}
             {showError && !hideDisconnectError && error && (
               <ErrorMessage message={error.message} />
             )}
           </StickToBottom.Content>
+          <ChatScrollArrows contentVersion={messages.length} />
         </StickToBottom>
         <div className="border-t border-gray-700">
-          <form onSubmit={handleSubmit} className="mx-auto max-w-[65ch] p-4">
-            <div className="flex gap-2">
+          <div className="relative px-4 py-4">
+            {showTokenPill && (
+              <div className="absolute left-6 top-1/2 -translate-y-1/2">
+                <TokenUsagePill
+                  used={tokensUsed}
+                  budget={sessionTokenBudget}
+                  budgetExceeded={budgetExceeded}
+                />
+              </div>
+            )}
+            <form
+              onSubmit={handleSubmit}
+              className="mx-auto flex w-full max-w-[65ch] items-center gap-2"
+            >
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -144,7 +181,7 @@ export const ChatPage = ({
               />
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || budgetExceeded}
                 className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 disabled:hover:bg-gray-700"
               >
                 {isLoading ? (
@@ -153,8 +190,8 @@ export const ChatPage = ({
                   "Send"
                 )}
               </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
 

@@ -11,11 +11,12 @@ export function answerQuestion(
   opts: {
     isFinal?: boolean;
     telemetry?: LangfuseTelemetryOpts;
+    onUsageReported?: () => void;
   },
 ): AgentStreamResult {
-  const { isFinal = false, telemetry } = opts;
+  const { isFinal = false, telemetry, onUsageReported } = opts;
 
-  return streamText({
+  const result = streamText({
     model,
     system: `You are a helpful AI assistant that answers questions based on the conversation history and information gathered from web searches.
 
@@ -25,19 +26,21 @@ When answering:
 3. Always cite your sources using markdown links
 4. If you're unsure about something, say so
 5. Format URLs as markdown links using [title](url)
-6. Never include raw URLs
-
+6. Never include raw URLs`,
+    prompt: `Based on the message history and the following summarized search results, answer the user's latest message.
+If the results are incomplete, say what you know and what is still uncertain.
 ${
   isFinal
-    ? "Note: We may not have all the information needed to answer the question completely. Please provide your best attempt at an answer based on the available information."
+    ? "\nNote: We may not have all the information needed to answer the question completely. Please provide your best attempt at an answer based on the available information."
     : ""
-}`,
-    prompt: `Message History:
+}
+
+---
+
+Message History:
 ${ctx.getMessageHistory()}
 
-Based on the message history and the following summarized search results, answer the user's latest message.
-If the results are incomplete, say what you know and what is still uncertain.
-
+Search History:
 ${ctx.getSearchHistory()}`,
     experimental_transform: [
       smoothStream({
@@ -51,4 +54,16 @@ ${ctx.getSearchHistory()}`,
       telemetry,
     ),
   });
+
+  void result.usage.then((usage) => {
+    if (usage) {
+      ctx.reportUsage(
+        isFinal ? "answer-question-final" : "answer-question",
+        usage,
+      );
+      onUsageReported?.();
+    }
+  });
+
+  return result;
 }

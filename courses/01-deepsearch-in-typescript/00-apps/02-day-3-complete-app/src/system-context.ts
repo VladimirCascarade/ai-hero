@@ -1,6 +1,14 @@
-import type { UIMessage } from "ai";
+import type { LanguageModelUsage, UIMessage } from "ai";
 import { env } from "~/env";
+import { isSessionBudgetExceeded } from "~/token-usage";
 import { messageToString } from "~/utils";
+
+export type TokenUsage = {
+  descriptor: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
 
 export type SearchResult = {
   date: string;
@@ -28,7 +36,9 @@ const formatSearchResult = (result: SearchResult) =>
 export class SystemContext {
   private step = 0;
   private searchHistory: SearchHistoryEntry[] = [];
+  /** The most recent feedback from getNextAction */
   private lastFeedback: string | null = null;
+  private usages: TokenUsage[] = [];
   private readonly messages: UIMessage[];
 
   constructor(messages: UIMessage[]) {
@@ -45,7 +55,36 @@ export class SystemContext {
   }
 
   shouldStop() {
-    return this.step >= env.MAX_AGENT_STEPS;
+    return this.getStopReason() !== null;
+  }
+
+  getStopReason(): "steps" | "budget" | null {
+    if (isSessionBudgetExceeded(this.getTotalTokens())) {
+      return "budget";
+    }
+
+    if (this.step >= env.MAX_AGENT_STEPS) {
+      return "steps";
+    }
+
+    return null;
+  }
+
+  reportUsage(descriptor: string, usage: LanguageModelUsage) {
+    this.usages.push({
+      descriptor,
+      promptTokens: usage.inputTokens ?? 0,
+      completionTokens: usage.outputTokens ?? 0,
+      totalTokens: usage.totalTokens ?? 0,
+    });
+  }
+
+  getUsages(): TokenUsage[] {
+    return this.usages;
+  }
+
+  getTotalTokens(): number {
+    return this.usages.reduce((sum, usage) => sum + (usage.totalTokens || 0), 0);
   }
 
   incrementStep() {
@@ -91,5 +130,33 @@ export class SystemContext {
 
   isFollowUp(): boolean {
     return this.messages.some((message) => message.role === "assistant");
+  }
+
+  /** User already replied after a clarification-only assistant turn — proceed to research. */
+  shouldSkipClarification(): boolean {
+    const lastAssistant = this.messages.findLast(
+      (message) => message.role === "assistant",
+    );
+    const lastUser = this.messages.findLast((message) => message.role === "user");
+
+    if (!lastAssistant || !lastUser) {
+      return false;
+    }
+
+    const lastUserIdx = this.messages.lastIndexOf(lastUser);
+    const lastAssistantIdx = this.messages.lastIndexOf(lastAssistant);
+
+    if (lastUserIdx <= lastAssistantIdx) {
+      return false;
+    }
+
+    const hadResearch = lastAssistant.parts?.some(
+      (part) =>
+        part.type === "data-research-plan" ||
+        part.type === "data-sources" ||
+        part.type === "data-new-action",
+    );
+
+    return !hadResearch;
   }
 }

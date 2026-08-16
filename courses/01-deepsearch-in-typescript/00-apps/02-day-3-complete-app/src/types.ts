@@ -22,5 +22,9 @@ export type OurMessage = UIMessage<
     "new-chat-created": {
       chatId: string;
     };
+    usage: {
+      totalTokens: number;
+      budgetExceeded?: boolean;
+    };
   }
 >;

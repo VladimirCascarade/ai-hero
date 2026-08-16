@@ -18,6 +18,8 @@ import { env } from "~/env";
 import { streamFromDeepSearch } from "~/deep-search";
 import { GENERATING_CHAT_TITLE } from "~/chat-title";
 import { generateChatTitle } from "~/generate-chat-title";
+import { SystemContext } from "~/system-context";
+import { toUsageDataPart } from "~/token-usage";
 import {
   checkRateLimit,
   recordRateLimit,
@@ -26,6 +28,7 @@ import {
 import type { OurMessage } from "~/types";
 import { messageToString } from "~/utils";
 import { streamContext } from "~/server/redis/resumable-stream-context";
+import { safeUIMessageStream } from "~/safe-ui-message-stream";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -124,8 +127,10 @@ export async function POST(request: Request) {
     },
   };
 
+  const ctx = new SystemContext(messages);
+
   const titlePromise = isNewChat
-    ? generateChatTitle(messages, telemetry)
+    ? generateChatTitle(messages, ctx, telemetry)
     : Promise.resolve("");
 
   if (isNewChat) {
@@ -170,19 +175,35 @@ export async function POST(request: Request) {
         });
       }
 
-      const result = await streamFromDeepSearch({
-        messages,
+      const { result } = await streamFromDeepSearch({
+        ctx,
         telemetry,
         writeMessagePart: writer.write,
       });
 
-      writer.merge(result.toUIMessageStream({ sendStart: false }));
+      writer.merge(
+        safeUIMessageStream(
+          result.toUIMessageStream({ sendStart: false }),
+        ),
+      );
 
       try {
         await result.consumeStream();
+        await result.usage;
       } catch (e) {
         console.error("consumeStream failed:", e);
-        throw e;
+      }
+
+      if (isNewChat) {
+        await titlePromise.catch(() => "");
+      }
+
+      const usage = toUsageDataPart(ctx.getTotalTokens());
+      if (usage.totalTokens > 0) {
+        writer.write({
+          type: "data-usage",
+          data: usage,
+        });
       }
     },
     onError: (e) => {
