@@ -10,16 +10,22 @@
  *   node shared/sync-env.mjs --dry-run
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
+const SHARED_DIR = dirname(
+  fileURLToPath(import.meta.url),
+);
 const APPS_ROOT = join(SHARED_DIR, "..");
 
 const APPS = [
   "01-day-1-app",
-  "02-day-3-app",
+  "02-day-3-complete-app",
   "03-day-4-app",
   "04-day-6-app",
   "05-day-8-app",
@@ -28,7 +34,9 @@ const APPS = [
   "07-migrated-to-v5",
 ];
 
-const AI_APPS = APPS.filter((app) => app !== "01-day-1-app");
+const AI_APPS = APPS.filter(
+  (app) => app !== "01-day-1-app",
+);
 
 const SHARED_ENV = join(SHARED_DIR, ".env.shared");
 const SHARED_MODEL = join(SHARED_DIR, "model.ts");
@@ -61,10 +69,20 @@ if (!existsSync(SHARED_ENV_JS)) {
   process.exit(1);
 }
 
-const modelContent = readFileSync(SHARED_MODEL, "utf8");
-const envJsContent = readFileSync(SHARED_ENV_JS, "utf8");
+const modelContent = readFileSync(
+  SHARED_MODEL,
+  "utf8",
+);
+const envJsContent = readFileSync(
+  SHARED_ENV_JS,
+  "utf8",
+);
 
-console.log(dryRun ? "Dry run — would write:\n" : "Syncing shared config to apps:\n");
+console.log(
+  dryRun
+    ? "Dry run — would write:\n"
+    : "Syncing shared config to apps:\n",
+);
 
 for (const app of APPS) {
   const envTarget = join(APPS_ROOT, app, ".env");
@@ -77,8 +95,18 @@ for (const app of APPS) {
 }
 
 for (const app of AI_APPS) {
-  const modelTarget = join(APPS_ROOT, app, "src", "model.ts");
-  const envJsTarget = join(APPS_ROOT, app, "src", "env.js");
+  const modelTarget = join(
+    APPS_ROOT,
+    app,
+    "src",
+    "model.ts",
+  );
+  const envJsTarget = join(
+    APPS_ROOT,
+    app,
+    "src",
+    "env.js",
+  );
   if (dryRun) {
     console.log(`  ${app}/src/model.ts`);
     console.log(`  ${app}/src/env.js`);
@@ -94,6 +122,10 @@ if (!dryRun) {
   const model = envContent
     .match(/^OPENROUTER_MODEL=(.+)$/m)?.[1]
     ?.replace(/^["']|["']$/g, "");
-  console.log(`\nDone. Model: ${model ?? "(not set)"}`);
-  console.log("Restart any running pnpm dev processes to pick up changes.");
+  console.log(
+    `\nDone. Model: ${model ?? "(not set)"}`,
+  );
+  console.log(
+    "Restart any running pnpm dev processes to pick up changes.",
+  );
 }
