@@ -1,10 +1,15 @@
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
-  NoObjectGeneratedError,
+  UI_MESSAGE_STREAM_HEADERS,
 } from "ai";
 import { auth } from "~/server/auth";
-import { upsertChat } from "~/server/db/queries";
+import {
+  appendStreamId,
+  getChat,
+  getStreamIds,
+  upsertChat,
+} from "~/server/db/queries";
 import { eq } from "drizzle-orm";
 import { db } from "~/server/db";
 import { chats } from "~/server/db/schema";
@@ -20,6 +25,7 @@ import {
 } from "~/server/redis/checkRateLimit";
 import type { OurMessage } from "~/types";
 import { messageToString } from "~/utils";
+import { streamContext } from "~/server/redis/resumable-stream-context";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -32,7 +38,46 @@ const rateLimitConfig: RateLimitConfig = {
   keyPrefix: "chat",
 };
 
-export const maxDuration = 60;
+const getErrorMessage = (error: unknown): string => {
+  const collect = (e: unknown): string => {
+    if (!e || typeof e !== "object") return "";
+    const o = e as {
+      responseBody?: string;
+      message?: string;
+      lastError?: unknown;
+      cause?: unknown;
+    };
+    return [o.responseBody, o.message, collect(o.lastError), collect(o.cause)]
+      .filter(Boolean)
+      .join("");
+  };
+
+  const text = collect(error);
+  const match =
+    text.match(/retryDelay[^0-9]*(\d+(?:\.\d+)?)s/i) ??
+    text.match(/Please retry in (\d+(?:\.\d+)?)s/i);
+
+  if (match) {
+    return `Rate limit exceeded. Wait ${Math.ceil(Number.parseFloat(match[1]!))}s and try again.`;
+  }
+
+  if (
+    text.includes("timeout") ||
+    text.includes("timed out") ||
+    text.includes("maxDuration") ||
+    text.includes("Function execution")
+  ) {
+    return "The request timed out. Try a simpler question or start a new chat.";
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Something went wrong. Please try again.";
+};
+
+export const maxDuration = env.MAX_DURATION_SECONDS;
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -47,9 +92,10 @@ export async function POST(request: Request) {
     const isAllowed = await rateLimitCheck.retry();
 
     if (!isAllowed) {
-      return new Response("Rate limit exceeded", {
-        status: 429,
-      });
+      return Response.json(
+        { error: "Too many messages. Wait a few minutes and try again." },
+        { status: 429 },
+      );
     }
   }
 
@@ -110,6 +156,9 @@ export async function POST(request: Request) {
     }
   }
 
+  const streamId = crypto.randomUUID();
+  await appendStreamId({ chatId, streamId });
+
   const stream = createUIMessageStream<OurMessage>({
     originalMessages: messages,
     execute: async ({ writer }) => {
@@ -128,15 +177,17 @@ export async function POST(request: Request) {
       });
 
       writer.merge(result.toUIMessageStream({ sendStart: false }));
+
+      try {
+        await result.consumeStream();
+      } catch (e) {
+        console.error("consumeStream failed:", e);
+        throw e;
+      }
     },
     onError: (e) => {
       console.error(e);
-
-      if (NoObjectGeneratedError.isInstance(e)) {
-        return "The model returned an invalid response. Please try sending your message again.";
-      }
-
-      return "Oops, an error occurred!";
+      return getErrorMessage(e);
     },
     onFinish: async ({ messages: entireConversation }) => {
       const lastMessage = entireConversation[entireConversation.length - 1];
@@ -174,5 +225,55 @@ export async function POST(request: Request) {
 
   return createUIMessageStreamResponse({
     stream,
+    async consumeSseStream({ stream: sseStream }) {
+      try {
+        await streamContext.createNewResumableStream(streamId, () => sseStream);
+      } catch (e) {
+        console.error("Resumable stream failed:", e);
+      }
+    },
   });
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const chatId = searchParams.get("chatId");
+
+  const session = await auth();
+
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  if (!chatId) {
+    return new Response("chatId is required", { status: 400 });
+  }
+
+  const chat = await getChat({ chatId, userId: session.user.id });
+
+  if (!chat) {
+    return new Response("Chat not found", { status: 404 });
+  }
+
+  const { mostRecentStreamId } = await getStreamIds({ chatId });
+
+  if (!mostRecentStreamId) {
+    return new Response(null, { status: 204 });
+  }
+
+  const resumedStream = await streamContext
+    .resumeExistingStream(mostRecentStreamId)
+    .catch((e) => {
+      console.error("Resume stream failed:", e);
+      return undefined;
+    });
+
+  if (resumedStream) {
+    return new Response(resumedStream, {
+      status: 200,
+      headers: UI_MESSAGE_STREAM_HEADERS,
+    });
+  }
+
+  return new Response(null, { status: 204 });
 }

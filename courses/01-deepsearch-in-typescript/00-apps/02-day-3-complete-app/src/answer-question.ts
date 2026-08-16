@@ -35,7 +35,7 @@ ${
     prompt: `Message History:
 ${ctx.getMessageHistory()}
 
-Based on the message history and the following search results, answer the user's latest message.
+Based on the message history and the following summarized search results, answer the user's latest message.
 If the results are incomplete, say what you know and what is still uncertain.
 
 ${ctx.getSearchHistory()}`,

@@ -73,29 +73,37 @@ export const markdownJoinerTransform =
   <TOOLS extends ToolSet>() =>
   () => {
     const joiner = new MarkdownJoiner();
+    let lastTextDeltaId: string | undefined;
 
     return new TransformStream<
       TextStreamPart<TOOLS>,
       TextStreamPart<TOOLS>
     >({
       transform(chunk, controller) {
+        if (!chunk) return;
+
         if (chunk.type === "text-delta") {
-          const processedText = joiner.processText(chunk.text);
+          if ("id" in chunk && chunk.id) {
+            lastTextDeltaId = chunk.id;
+          }
+          const processedText = joiner.processText(chunk.text ?? "");
           if (processedText) {
             controller.enqueue({
               ...chunk,
               text: processedText,
             });
           }
-        } else {
-          controller.enqueue(chunk);
+          return;
         }
+
+        controller.enqueue(chunk);
       },
       flush(controller) {
         const remaining = joiner.flush();
-        if (remaining) {
+        if (remaining && lastTextDeltaId) {
           controller.enqueue({
             type: "text-delta",
+            id: lastTextDeltaId,
             text: remaining,
           } as TextStreamPart<TOOLS>);
         }

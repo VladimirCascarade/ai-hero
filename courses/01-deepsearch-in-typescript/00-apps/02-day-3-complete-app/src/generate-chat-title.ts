@@ -4,7 +4,7 @@ import {
   langfuseTelemetry,
   type LangfuseTelemetryOpts,
 } from "~/langfuse-telemetry";
-import { model } from "~/model";
+import { chatTitleModel } from "~/model";
 import { messageToString } from "~/utils";
 
 export const generateChatTitle = async (
@@ -12,7 +12,7 @@ export const generateChatTitle = async (
   telemetry?: LangfuseTelemetryOpts,
 ) => {
   const { text } = await generateText({
-    model,
+    model: chatTitleModel,
     system: `You are a chat title generator.
 You will be given a chat history, and you will need to generate a title for the chat.
 The title should be a single sentence that captures the essence of the chat.

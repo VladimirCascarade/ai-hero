@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { env } from "~/env";
 import { messageToString } from "~/utils";
 
 export type SearchResult = {
@@ -6,7 +7,7 @@ export type SearchResult = {
   title: string;
   url: string;
   snippet: string;
-  scrapedContent: string;
+  summary: string;
 };
 
 export type SearchHistoryEntry = {
@@ -19,14 +20,15 @@ const formatSearchResult = (result: SearchResult) =>
     `### ${result.date} - ${result.title}`,
     result.url,
     result.snippet,
-    `<scrape_result>`,
-    result.scrapedContent,
-    `</scrape_result>`,
+    `<summary>`,
+    result.summary,
+    `</summary>`,
   ].join("\n\n");
 
 export class SystemContext {
   private step = 0;
   private searchHistory: SearchHistoryEntry[] = [];
+  private lastFeedback: string | null = null;
   private readonly messages: UIMessage[];
 
   constructor(messages: UIMessage[]) {
@@ -43,7 +45,7 @@ export class SystemContext {
   }
 
   shouldStop() {
-    return this.step >= 10;
+    return this.step >= env.MAX_AGENT_STEPS;
   }
 
   incrementStep() {
@@ -52,6 +54,14 @@ export class SystemContext {
 
   reportSearch(search: SearchHistoryEntry) {
     this.searchHistory.push(search);
+  }
+
+  setLastFeedback(feedback: string) {
+    this.lastFeedback = feedback;
+  }
+
+  getLastFeedback(): string | null {
+    return this.lastFeedback;
   }
 
   getSearchHistory(): string {

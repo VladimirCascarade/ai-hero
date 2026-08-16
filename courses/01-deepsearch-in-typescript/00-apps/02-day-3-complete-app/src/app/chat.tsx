@@ -3,11 +3,16 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
+import { ErrorMessage } from "~/components/error-message";
+import { ResumeStreamMessage } from "~/components/resume-stream-message";
 import { SignInModal } from "~/components/sign-in-modal";
+import { useReloadStreamMessage } from "~/hooks/use-reload-stream-message";
+import { useResumeOnMount } from "~/hooks/use-resume-on-mount";
+import { useStreamResumeFeedback } from "~/hooks/use-stream-resume-feedback";
 import type { OurMessage } from "~/types";
 
 interface ChatProps {
@@ -27,14 +32,26 @@ export const ChatPage = ({
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
+  const resume = useResumeOnMount(isNewChat);
 
-  const { messages, status, sendMessage } = useChat<OurMessage>({
-    transport: new DefaultChatTransport({
-      body: {
-        chatId,
-        isNewChat,
-      },
-    }),
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        body: {
+          chatId,
+          isNewChat,
+        },
+        prepareReconnectToStreamRequest: () => ({
+          api: `/api/chat?chatId=${chatId}`,
+        }),
+      }),
+    [chatId, isNewChat],
+  );
+
+  const { messages, status, sendMessage, error, clearError } = useChat<OurMessage>({
+    id: chatId,
+    resume,
+    transport,
     messages: initialMessages,
     onData: (dataPart) => {
       if (
@@ -48,6 +65,17 @@ export const ChatPage = ({
       }
     },
   });
+
+  const { isResuming, showError } = useStreamResumeFeedback(
+    resume,
+    status,
+    error,
+    clearError,
+  );
+  const { showResumeMessage, hideDisconnectError } = useReloadStreamMessage(
+    error,
+    status,
+  );
 
   const prevStatusRef = useRef(status);
 
@@ -97,6 +125,10 @@ export const ChatPage = ({
                 />
               );
             })}
+            {(isResuming || showResumeMessage) && <ResumeStreamMessage />}
+            {showError && !hideDisconnectError && error && (
+              <ErrorMessage message={error.message} />
+            )}
           </StickToBottom.Content>
         </StickToBottom>
         <div className="border-t border-gray-700">

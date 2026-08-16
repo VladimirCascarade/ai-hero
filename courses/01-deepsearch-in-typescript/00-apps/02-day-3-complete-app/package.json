@@ -21,13 +21,14 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache"
   },
   "dependencies": {
-    "@openrouter/ai-sdk-provider": "2.9.1",
     "@ai-sdk/react": "3.0.0",
     "@auth/drizzle-adapter": "^1.7.2",
+    "@openrouter/ai-sdk-provider": "2.9.1",
     "@opentelemetry/api-logs": "^0.200.0",
     "@opentelemetry/instrumentation": "^0.200.0",
     "@opentelemetry/sdk-logs": "^0.200.0",
     "@t3-oss/env-nextjs": "^0.10.1",
+    "@tavily/core": "^0.7.7",
     "@vercel/otel": "^1.11.0",
     "ai": "6.0.0",
     "cheerio": "^1.0.0",
@@ -46,6 +47,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.3",
     "rehype-raw": "^7.0.0",
+    "resumable-stream": "^2.2.12",
     "robots-parser": "^3.0.1",
     "simple-icons": "^14.5.0",
     "turndown": "^7.2.0",

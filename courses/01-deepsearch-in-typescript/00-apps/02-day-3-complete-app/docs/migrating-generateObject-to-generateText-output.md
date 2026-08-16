@@ -141,7 +141,7 @@ onError: (e) => {
   console.error(e);
 
   if (NoObjectGeneratedError.isInstance(e)) {
-    return "The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL).";
+    return "The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL_HIGH).";
   }
 
   return "Oops, an error occurred!";
@@ -150,13 +150,13 @@ onError: (e) => {
 
 **What the user sees:**
 
-> The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL).
+> The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL_HIGH).
 
 **What the user can do:**
 
 1. **Retry** — click Send again with the same message (model output can vary)
 2. **Rephrase** — ask a clearer question instead of a greeting like "hello"
-3. **Switch model** — change `OPENROUTER_MODEL` in `.env.shared` to a model that reliably returns JSON (e.g. a paid model)
+3. **Switch model** — change `OPENROUTER_MODEL_HIGH` in `.env.shared` to a model that reliably returns JSON (e.g. a paid model)
 
 **Pros:** ~5 lines, no agent logic changes, user gets actionable guidance  
 **Cons:** Does not fix the failure — just explains it
@@ -217,13 +217,13 @@ This handles the exact failure from the terminal: Gemma returned `answer\n\nHell
 - **Recoverable** (plain-text `answer`): normal streamed answer, no error
 - **Unrecoverable** (plain-text `search` with no query, or gibberish):
 
-> The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL).
+> The model returned an invalid response. Try sending your message again, or switch to a model that supports structured output in your .env file (OPENROUTER_MODEL_HIGH).
 
 **What the user can do:**
 
 1. Retry the message
 2. Ask a more specific question (e.g. "What is the capital of France?" instead of "hello")
-3. Switch `OPENROUTER_MODEL` to a stronger model
+3. Switch `OPENROUTER_MODEL_HIGH` to a stronger model
 
 **Pros:** Covers both the happy path and the failure path with minimal code  
 **Cons:** Still can't recover search/scrape actions from plain text
@@ -238,7 +238,7 @@ This handles the exact failure from the terminal: Gemma returned `answer\n\nHell
 
 ```ts
 export const model = openrouter.chat(
-  process.env.OPENROUTER_MODEL ?? "google/gemma-4-31b-it:free",
+  process.env.OPENROUTER_MODEL_HIGH ?? "google/gemma-4-31b-it:free",
 );
 
 export const actionModel = openrouter.chat(

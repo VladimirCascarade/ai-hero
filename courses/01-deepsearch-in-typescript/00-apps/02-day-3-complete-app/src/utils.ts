@@ -1,10 +1,10 @@
 import type { UIMessage } from "ai";
 
 export const messageToString = (message: UIMessage) => {
-  return message.parts
+  return (message.parts ?? [])
     .map((part) => {
-      if (part.type === "text") {
-        return part.text;
+      if (part?.type === "text") {
+        return part.text ?? "";
       }
       return "";
     })
